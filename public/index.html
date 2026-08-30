@@ -16,20 +16,33 @@
     <div id="summary" class="summary"></div>
     <div class="actions">
       <span id="ingest-status" class="ingest-status"></span>
-      <button id="sources-btn" class="ghost" title="Administrer datakilder">Kilder</button>
+      <button id="settings-btn" class="ghost" title="Innstillinger">Innstillinger</button>
       <button id="sync-btn" title="Hent nye data fra kildene">Synk nå</button>
     </div>
   </header>
 
-  <div id="sources-modal" class="modal-backdrop" hidden>
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+  <div id="settings-modal" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="set-title">
       <div class="modal-head">
-        <h2 id="sm-title">Datakilder</h2>
-        <button id="sm-close" class="icon-btn" aria-label="Lukk">×</button>
+        <h2 id="set-title">Innstillinger</h2>
+        <button id="set-close" class="icon-btn" aria-label="Lukk">×</button>
       </div>
 
       <div class="modal-body">
-        <ul id="sm-list" class="src-list"></ul>
+        <section class="settings-section">
+          <h3>Karttjeneste</h3>
+          <label>Bakgrunnskart
+            <select id="map-provider"></select>
+          </label>
+          <p class="hint">
+            Norgeskart (Kartverket) har detaljerte turkart, men dekker bare Norden.
+            OpenStreetMap dekker hele verden.
+          </p>
+        </section>
+
+        <section class="settings-section">
+          <h3>Datakilder</h3>
+          <ul id="sm-list" class="src-list"></ul>
 
         <div class="src-form-wrap">
           <h3 id="sm-form-title">Legg til kilde</h3>
@@ -111,6 +124,7 @@
             </div>
           </form>
         </div>
+        </section>
       </div>
     </div>
   </div>

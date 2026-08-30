@@ -98,6 +98,23 @@ button.danger { background: var(--z5); color: #fff; }
 }
 .modal-body { padding: 16px 18px 20px; }
 
+.settings-section { margin-bottom: 22px; }
+.settings-section:last-child { margin-bottom: 0; }
+.settings-section > h3 { margin: 0 0 10px; font-size: 14px; }
+.settings-section > label {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12px; color: var(--muted);
+}
+.settings-section select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: inherit;
+  width: 100%;
+}
+
 .src-list { list-style: none; margin: 0 0 18px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .src-list:empty::after { content: "Ingen kilder konfigurert ennå."; color: var(--muted); font-size: 13px; }
 .src-item {

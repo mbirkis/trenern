@@ -11,6 +11,43 @@ const TYPE_COLORS = {
 };
 const DEFAULT_VIEW = [61.5, 8.5];
 
+// Selectable background map services. `server: true` means "use whatever the
+// backend resolved in /api/config" (Tracestrack Topo or OSM fallback).
+const MAP_PROVIDERS = {
+  standard: { label: 'Standard (topografisk)', server: true },
+  osm: {
+    label: 'OpenStreetMap',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap-bidragsytere',
+    maxZoom: 19,
+  },
+  norgeskart: {
+    label: 'Norgeskart – topografisk (Kartverket)',
+    url: 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
+    attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
+    maxZoom: 20,
+  },
+  'norgeskart-graatone': {
+    label: 'Norgeskart – gråtone (Kartverket)',
+    url: 'https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png',
+    attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
+    maxZoom: 20,
+  },
+};
+const MAP_PROVIDER_KEY = 'trenern.mapProvider';
+
+function getMapProvider() {
+  try {
+    const v = localStorage.getItem(MAP_PROVIDER_KEY);
+    if (v && MAP_PROVIDERS[v]) return v;
+  } catch (_) { /* localStorage unavailable */ }
+  return 'standard';
+}
+
+function setMapProvider(id) {
+  try { localStorage.setItem(MAP_PROVIDER_KEY, id); } catch (_) { /* ignore */ }
+}
+
 let map, tileLayer, routeLayer, markerLayer, overviewLayer;
 let legendCtl;
 let activities = [];
@@ -30,7 +67,7 @@ async function init() {
 
   document.getElementById('sync-btn').addEventListener('click', sync);
   document.getElementById('type-filter').addEventListener('change', onFilterChange);
-  initSourcesModal();
+  initSettingsModal();
 
   try {
     appConfig = await fetchJSON('/api/config');
@@ -43,11 +80,20 @@ async function init() {
 }
 
 function applyTileLayer() {
-  const m = (appConfig && appConfig.map) || {};
-  const url = m.tileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  const attribution = m.attribution || '&copy; OpenStreetMap-bidragsytere';
+  const p = MAP_PROVIDERS[getMapProvider()] || MAP_PROVIDERS.standard;
+  let url, attribution, maxZoom;
+  if (p.server) {
+    const m = (appConfig && appConfig.map) || {};
+    url = m.tileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    attribution = m.attribution || '&copy; OpenStreetMap-bidragsytere';
+    maxZoom = m.maxZoom || 19;
+  } else {
+    url = p.url;
+    attribution = p.attribution;
+    maxZoom = p.maxZoom || 19;
+  }
   if (tileLayer) map.removeLayer(tileLayer);
-  tileLayer = L.tileLayer(url, { maxZoom: m.maxZoom || 19, attribution }).addTo(map);
+  tileLayer = L.tileLayer(url, { maxZoom, attribution }).addTo(map);
 }
 
 async function fetchJSON(url, opts) {
@@ -428,19 +474,21 @@ function updateLegend(isDetail) {
   }
 }
 
-// ---- sources modal ----
-function initSourcesModal() {
-  const modal = document.getElementById('sources-modal');
+// ---- settings modal ----
+function initSettingsModal() {
+  const modal = document.getElementById('settings-modal');
   const form = document.getElementById('sm-form');
-  const openBtn = document.getElementById('sources-btn');
+  const openBtn = document.getElementById('settings-btn');
   const close = () => { modal.hidden = true; };
+
+  initMapProviderSelect();
 
   openBtn.addEventListener('click', async () => {
     modal.hidden = false;
     resetSourceForm();
     await renderSourceList();
   });
-  document.getElementById('sm-close').addEventListener('click', close);
+  document.getElementById('set-close').addEventListener('click', close);
   document.getElementById('sm-cancel').addEventListener('click', resetSourceForm);
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
   document.addEventListener('keydown', (e) => {
@@ -451,6 +499,19 @@ function initSourcesModal() {
   form.authMethod.addEventListener('change', syncFormVisibility);
   form.addEventListener('submit', onSourceSubmit);
   syncFormVisibility();
+}
+
+function initMapProviderSelect() {
+  const sel = document.getElementById('map-provider');
+  if (!sel) return;
+  sel.innerHTML = Object.entries(MAP_PROVIDERS)
+    .map(([id, p]) => `<option value="${id}">${escapeHtml(p.label)}</option>`)
+    .join('');
+  sel.value = getMapProvider();
+  sel.addEventListener('change', () => {
+    setMapProvider(sel.value);
+    applyTileLayer();
+  });
 }
 
 function syncFormVisibility() {
