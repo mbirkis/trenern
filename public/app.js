@@ -5,36 +5,49 @@ const TYPE_LABELS = {
   running: 'Løping', trailrunning: 'Terrengløp', hiking: 'Fjelltur',
   walking: 'Gåtur', cycling: 'Sykkel', skiing: 'Ski', other: 'Annet',
 };
+const TYPE_COLORS = {
+  running: '#5ab1ff', trailrunning: '#a06bff', hiking: '#3fb950',
+  walking: '#d6b52c', cycling: '#e8873b', skiing: '#4dd0e1', other: '#9aa3b2',
+};
+const DEFAULT_VIEW = [61.5, 8.5];
 
-let map, routeLayer, markerLayer;
+let map, tileLayer, routeLayer, markerLayer, overviewLayer;
+let legendCtl;
 let activities = [];
+let routes = [];          // [{id,type,name,start,points:[[lat,lon]...]}]
 let selectedId = null;
 let appConfig = null;
 
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-  map = L.map('map', { zoomControl: true }).setView([61.5, 8.5], 5);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap',
-  }).addTo(map);
+  map = L.map('map', { zoomControl: true }).setView(DEFAULT_VIEW, 5);
+  overviewLayer = L.layerGroup().addTo(map);
   routeLayer = L.layerGroup().addTo(map);
   markerLayer = L.layerGroup().addTo(map);
-  addLegend();
   setTimeout(() => map.invalidateSize(), 0);
   window.addEventListener('resize', () => map.invalidateSize());
 
   document.getElementById('sync-btn').addEventListener('click', sync);
-  document.getElementById('type-filter').addEventListener('change', renderList);
+  document.getElementById('type-filter').addEventListener('change', onFilterChange);
   initSourcesModal();
 
   try {
     appConfig = await fetchJSON('/api/config');
   } catch (_) { /* non-fatal */ }
+  applyTileLayer();
+  addLegend();
 
   await refresh();
   pollIngest();
+}
+
+function applyTileLayer() {
+  const m = (appConfig && appConfig.map) || {};
+  const url = m.tileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const attribution = m.attribution || '&copy; OpenStreetMap-bidragsytere';
+  if (tileLayer) map.removeLayer(tileLayer);
+  tileLayer = L.tileLayer(url, { maxZoom: m.maxZoom || 19, attribution }).addTo(map);
 }
 
 async function fetchJSON(url, opts) {
@@ -52,11 +65,84 @@ async function refresh() {
   renderSummary(stats);
   populateTypeFilter();
   renderList();
+  await loadRoutes();
   if (selectedId && activities.some((a) => a.id === selectedId)) {
     selectActivity(selectedId);
-  } else if (activities.length) {
-    selectActivity(activities[0].id);
+  } else {
+    clearSelection();
   }
+}
+
+function currentFilter() {
+  return document.getElementById('type-filter').value;
+}
+
+async function onFilterChange() {
+  renderList();
+  await loadRoutes();
+  const stillValid =
+    selectedId && activities.some((a) => a.id === selectedId && matchesFilter(a));
+  if (selectedId && !stillValid) {
+    clearSelection();
+  } else if (!selectedId) {
+    drawOverview();
+    renderDetail(null);
+  } else {
+    renderMap();
+  }
+}
+
+function matchesFilter(a) {
+  const f = currentFilter();
+  return !f || a.type === f;
+}
+
+async function loadRoutes() {
+  const f = currentFilter();
+  try {
+    routes = await fetchJSON('/api/routes' + (f ? `?type=${encodeURIComponent(f)}` : ''));
+  } catch (_) {
+    routes = [];
+  }
+}
+
+/** Draw either the all-routes overview or the single selected route. */
+function renderMap() {
+  map.invalidateSize();
+  if (selectedId) return;          // detail draw handled by selectActivity()
+  drawOverview();
+}
+
+function drawOverview() {
+  routeLayer.clearLayers();
+  markerLayer.clearLayers();
+  overviewLayer.clearLayers();
+  updateLegend(false);
+
+  const all = [];
+  for (const r of routes) {
+    if (!r.points || r.points.length < 2) continue;
+    const line = L.polyline(r.points, {
+      color: TYPE_COLORS[r.type] || TYPE_COLORS.other,
+      weight: 3,
+      opacity: 0.55,
+    });
+    line.bindTooltip(`${r.name} · ${fmtDate(r.start)}`, { sticky: true });
+    line.on('click', () => selectActivity(r.id));
+    line.on('mouseover', () => line.setStyle({ weight: 5, opacity: 0.95 }));
+    line.on('mouseout', () => line.setStyle({ weight: 3, opacity: 0.55 }));
+    line.addTo(overviewLayer);
+    all.push(...r.points);
+  }
+  if (all.length) map.fitBounds(L.latLngBounds(all).pad(0.08));
+  else map.setView(DEFAULT_VIEW, 5);
+}
+
+function clearSelection() {
+  selectedId = null;
+  renderList();
+  renderDetail(null);
+  drawOverview();
 }
 
 function renderSummary(stats) {
@@ -97,7 +183,10 @@ function renderList() {
       </div>
     </li>`).join('');
   ul.querySelectorAll('li').forEach((li) =>
-    li.addEventListener('click', () => selectActivity(li.dataset.id)));
+    li.addEventListener('click', () => {
+      if (li.dataset.id === selectedId) clearSelection();
+      else selectActivity(li.dataset.id);
+    }));
 }
 
 async function selectActivity(id) {
@@ -116,8 +205,10 @@ async function selectActivity(id) {
 
 function drawRoute(a) {
   map.invalidateSize();
+  overviewLayer.clearLayers();   // hide all other routes while one is selected
   routeLayer.clearLayers();
   markerLayer.clearLayers();
+  updateLegend(true);
   const pts = (a.track || []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
   if (pts.length < 2) {
     map.setView([61.5, 8.5], 5);
@@ -163,6 +254,14 @@ function zoneOf(hr, bounds) {
 
 function renderDetail(a) {
   const el = document.getElementById('detail');
+  if (!a) {
+    const n = routes.length;
+    el.innerHTML = `<div class="detail-empty">
+      ${n ? `Viser <b>${n}</b> tur${n === 1 ? '' : 'er'} på kartet.` : 'Ingen turer å vise.'}<br>
+      Velg en økt i listen eller klikk en rute for detaljer.
+    </div>`;
+    return;
+  }
   const pace = a.avgPaceSecPerKm ? fmtPace(a.avgPaceSecPerKm) : '–';
   const speed = a.maxSpeedMs ? (a.maxSpeedMs * 3.6).toFixed(1) + ' km/t' : '–';
   const metrics = [
@@ -193,6 +292,7 @@ function renderDetail(a) {
   const cumDist = cumulativeDistanceKm(a.track || []);
 
   el.innerHTML = `
+    <button id="back-to-all" class="ghost back-btn">← Alle turer</button>
     <h2>${escapeHtml(a.name)}</h2>
     <div class="sub">${TYPE_LABELS[a.type] || a.type} · ${fmtDateTime(a.start)} · kilde: ${escapeHtml(a.source)}${a.sourceName ? ' / ' + escapeHtml(a.sourceName) : ''}</div>
     <div class="metric-grid">
@@ -205,6 +305,8 @@ function renderDetail(a) {
     ${eleSeries.length > 3 ? chartBlock('Høydeprofil', eleSeries, 'm', cumDist) : ''}
     ${hrSeries.length > 3 ? chartBlock('Puls', hrSeries, 'bpm', cumDist) : ''}
   `;
+  const back = document.getElementById('back-to-all');
+  if (back) back.addEventListener('click', clearSelection);
 }
 
 function chartBlock(title, series, unit, xKm) {
@@ -282,14 +384,37 @@ function setIngestStatus(txt) {
 }
 
 function addLegend() {
-  const legend = L.control({ position: 'bottomright' });
-  legend.onAdd = () => {
-    const div = L.DomUtil.create('div', 'map-legend');
-    div.innerHTML = 'Rutefarge = pulssone<br>' +
-      [1, 2, 3, 4, 5].map((z) => `<i style="background:${ZONE_COLORS[z - 1]}"></i>Z${z}`).join(' ');
-    return div;
+  legendCtl = L.control({ position: 'bottomright' });
+  legendCtl.onAdd = () => {
+    legendCtl._div = L.DomUtil.create('div', 'map-legend');
+    return legendCtl._div;
   };
-  legend.addTo(map);
+  legendCtl.addTo(map);
+  updateLegend(false);
+}
+
+function updateLegend(isDetail) {
+  if (!legendCtl || !legendCtl._div) return;
+  if (isDetail) {
+    legendCtl._div.innerHTML =
+      'Rutefarge = pulssone<br>' +
+      [1, 2, 3, 4, 5]
+        .map((z) => `<i style="background:${ZONE_COLORS[z - 1]}"></i>Z${z}`)
+        .join(' ');
+  } else {
+    const present = [...new Set(routes.map((r) => r.type))];
+    const types = present.length ? present : Object.keys(TYPE_COLORS);
+    legendCtl._div.innerHTML =
+      'Farge = turtype<br>' +
+      types
+        .map(
+          (t) =>
+            `<i style="background:${TYPE_COLORS[t] || TYPE_COLORS.other}"></i>${
+              TYPE_LABELS[t] || t
+            }`
+        )
+        .join('<br>');
+  }
 }
 
 // ---- sources modal ----

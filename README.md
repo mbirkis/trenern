@@ -52,9 +52,24 @@ persisterer database + config i to named volumes.
 | `storage.backend` | `"sqlite"` (standard) eller `"postgres"` |
 | `storage.sqlite.file` | Sti til SQLite-fila (standard `./data/trenern.db`) |
 | `storage.postgres.url` | Tilkoblingsstreng når backend er `postgres` |
+| `map.tracestrackKey` | API-nøkkel for Tracestrack Topo-kartstilen (se under) |
+| `map.tileUrl` / `map.attribution` / `map.maxZoom` | Kart-tiles. Standard er Tracestrack Topo |
+| `map.fallbackTileUrl` / `map.fallbackAttribution` | Brukes når ingen Tracestrack-nøkkel er satt (standard OSM raster) |
 | `sources[]` | Liste med datakilder, se under |
 
+### Kart
+
+Kartet bruker **Tracestrack Topo** (topografisk OSM-stil). Denne krever en gratis
+API-nøkkel fra <https://tracestrack.com/> — legg den i `map.tracestrackKey` eller
+miljøvariabelen `TRACESTRACK_KEY`. Uten nøkkel faller kartet tilbake til vanlige
+OpenStreetMap-tiles.
+
+Alle turer tegnes på kartet samtidig (farget etter turtype). Velger du én tur —
+i listen eller ved å klikke ruta — skjules de andre, og ruta farges etter
+pulssone. «← Alle turer» i detaljpanelet tar deg tilbake til oversikten.
+
 Env-overstyring: `PORT`, `HOST`, `TRENERN_CONFIG` (alternativ config-sti),
+`TRACESTRACK_KEY`,
 `DATABASE_URL` (setter Postgres-backend), `TRENERN_SQLITE_FILE`,
 `TRENERN_DB_BACKEND`.
 
@@ -142,8 +157,9 @@ Ingest cacher `ref + modifiedTime + size` per kilde, så uendrede filer hoppes o
 | `GET` | `/api/activities?type=&from=&to=` | Liste (sammendrag) |
 | `GET` | `/api/activities/:id` | Full økt inkl. spor |
 | `DELETE` | `/api/activities/:id` | Slett lagret økt |
+| `GET` | `/api/routes?type=&from=&to=` | Forenklede ruter (alle turer) for kartet |
 | `GET` | `/api/stats` | Totaler |
-| `GET` | `/api/config` | Utøver, pulssoner, parsere |
+| `GET` | `/api/config` | Utøver, pulssoner, parsere, kart |
 | `GET` | `/api/sources` | Konfigurerte kilder |
 | `POST` | `/api/ingest` `{force?, sourceId?}` | Kjør ingest nå |
 | `GET` | `/api/ingest/status` | Status / siste resultat |

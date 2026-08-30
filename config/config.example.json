@@ -21,6 +21,14 @@
       "url": null
     }
   },
+  "map": {
+    "tileUrl": "https://tile.tracestrack.com/topo__/{z}/{x}/{y}.png?key={key}",
+    "attribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>-bidragsytere, kartstil &copy; <a href=\"https://www.tracestrack.com/\">Tracestrack</a>",
+    "tracestrackKey": "",
+    "maxZoom": 19,
+    "fallbackTileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "fallbackAttribution": "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a>-bidragsytere"
+  },
   "sources": [
     {
       "id": "local-sample",

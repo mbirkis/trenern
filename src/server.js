@@ -17,6 +17,43 @@ import { hrZoneBounds } from './model.js';
 const app = express();
 app.use(express.json({ limit: '2mb' }));
 
+/**
+ * Resolve the effective map tile layer. Uses the Tracestrack Topo style when a
+ * key is configured (config.map.tracestrackKey or TRACESTRACK_KEY), otherwise
+ * falls back to the standard OSM raster tiles.
+ */
+function resolveMapConfig() {
+  const m = config.map || {};
+  const key = process.env.TRACESTRACK_KEY || m.tracestrackKey || '';
+  const wantsKey = (m.tileUrl || '').includes('{key}');
+  const useTracestrack = !wantsKey || key;
+  return {
+    tileUrl: useTracestrack
+      ? (m.tileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png').replace('{key}', key)
+      : m.fallbackTileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: useTracestrack
+      ? m.attribution || '&copy; OpenStreetMap contributors'
+      : m.fallbackAttribution || '&copy; OpenStreetMap contributors',
+    maxZoom: m.maxZoom || 19,
+    style: useTracestrack ? 'tracestrack-topo' : 'osm',
+  };
+}
+
+/** Downsample a track to ~`max` [lat,lon] pairs for the map overview. */
+function simplifyTrack(track, max = 250) {
+  const pts = (track || []).filter(
+    (p) => Number.isFinite(p.lat) && Number.isFinite(p.lon)
+  );
+  const r = (v) => Math.round(v * 1e5) / 1e5;
+  if (pts.length <= max) return pts.map((p) => [r(p.lat), r(p.lon)]);
+  const step = Math.ceil(pts.length / max);
+  const out = [];
+  for (let i = 0; i < pts.length; i += step) out.push([r(pts[i].lat), r(pts[i].lon)]);
+  const last = pts[pts.length - 1];
+  out.push([r(last.lat), r(last.lon)]);
+  return out;
+}
+
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 app.get('/api/config', (_req, res) => {
@@ -25,6 +62,7 @@ app.get('/api/config', (_req, res) => {
     hrZones: hrZoneBounds(),
     parsers: listParsers(),
     ingest: config.ingest,
+    map: resolveMapConfig(),
   });
 });
 
@@ -73,6 +111,26 @@ app.get('/api/activities', async (req, res, next) => {
 app.get('/api/stats', async (_req, res, next) => {
   try {
     res.json(await store.stats());
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Simplified polylines for every activity — used to draw all routes on the map.
+app.get('/api/routes', async (req, res, next) => {
+  try {
+    const { type, from, to } = req.query;
+    const summaries = await store.list({ type, from, to });
+    const out = [];
+    for (const s of summaries) {
+      if (!s.hasTrack) continue;
+      const a = await store.get(s.id);
+      const points = simplifyTrack(a && a.track);
+      if (points.length >= 2) {
+        out.push({ id: s.id, type: s.type, name: s.name, start: s.start, points });
+      }
+    }
+    res.json(out);
   } catch (err) {
     next(err);
   }
