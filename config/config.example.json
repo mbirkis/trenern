@@ -1,0 +1,36 @@
+{
+  "server": {
+    "port": 3005,
+    "host": "127.0.0.1"
+  },
+  "athlete": {
+    "birthYear": 1990,
+    "maxHr": null,
+    "restingHr": 50
+  },
+  "ingest": {
+    "autoOnStart": true,
+    "intervalMinutes": 30
+  },
+  "sources": [
+    {
+      "id": "local-sample",
+      "type": "localFolder",
+      "enabled": true,
+      "path": "./data/sample"
+    },
+    {
+      "id": "gdrive-health",
+      "type": "googleDrive",
+      "enabled": false,
+      "folderId": "PUT_GOOGLE_DRIVE_FOLDER_ID_HERE",
+      "auth": {
+        "method": "serviceAccount",
+        "serviceAccountKeyFile": "./config/gdrive-service-account.json",
+        "apiKey": null
+      },
+      "recursive": true,
+      "filePattern": "\\.json$"
+    }
+  ]
+}

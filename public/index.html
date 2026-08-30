@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>trenern</title>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="logo">▲</span>
+      <h1>trenern</h1>
+    </div>
+    <div id="summary" class="summary"></div>
+    <div class="actions">
+      <span id="ingest-status" class="ingest-status"></span>
+      <button id="sync-btn" title="Hent nye data fra kildene">Synk nå</button>
+    </div>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <div class="filters">
+        <select id="type-filter">
+          <option value="">Alle typer</option>
+        </select>
+      </div>
+      <ul id="activity-list"></ul>
+    </aside>
+
+    <section id="map"></section>
+
+    <aside id="detail">
+      <div class="detail-empty">Velg en økt fra listen</div>
+    </aside>
+  </main>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

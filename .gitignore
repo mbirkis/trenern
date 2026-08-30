@@ -1,0 +1,9 @@
+node_modules/
+config/config.json
+config/gdrive-service-account.json
+config/*token*.json
+data/activities/
+data/cache/
+data/index.json
+*.log
+.DS_Store
