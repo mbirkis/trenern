@@ -16,9 +16,104 @@
     <div id="summary" class="summary"></div>
     <div class="actions">
       <span id="ingest-status" class="ingest-status"></span>
+      <button id="sources-btn" class="ghost" title="Administrer datakilder">Kilder</button>
       <button id="sync-btn" title="Hent nye data fra kildene">Synk nå</button>
     </div>
   </header>
+
+  <div id="sources-modal" class="modal-backdrop" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sm-title">
+      <div class="modal-head">
+        <h2 id="sm-title">Datakilder</h2>
+        <button id="sm-close" class="icon-btn" aria-label="Lukk">×</button>
+      </div>
+
+      <div class="modal-body">
+        <ul id="sm-list" class="src-list"></ul>
+
+        <div class="src-form-wrap">
+          <h3 id="sm-form-title">Legg til kilde</h3>
+          <form id="sm-form" autocomplete="off">
+            <input type="hidden" name="editingId" />
+
+            <label>Type
+              <select name="type">
+                <option value="googleDrive">Google Drive</option>
+                <option value="localFolder">Lokal mappe</option>
+              </select>
+            </label>
+
+            <label>Navn (valgfritt)
+              <input name="label" placeholder="f.eks. Helsedata fra telefon" />
+            </label>
+
+            <div data-when="googleDrive">
+              <label>Google Drive mappe-ID
+                <input name="folderId" placeholder="1AbC...  (fra mappe-URL-en)" />
+              </label>
+              <p class="hint">
+                Åpne mappen i Drive og kopier ID-en fra URL-en:
+                <code>drive.google.com/drive/folders/<b>&lt;ID&gt;</b></code>
+              </p>
+
+              <label>Autentisering
+                <select name="authMethod">
+                  <option value="serviceAccount">Service-konto (anbefalt)</option>
+                  <option value="apiKey">API-nøkkel (kun offentlige mapper)</option>
+                </select>
+              </label>
+
+              <div data-when-auth="serviceAccount">
+                <label>Service-konto JSON-nøkkel
+                  <textarea name="serviceAccountKey" rows="5"
+                    placeholder='Lim inn hele innholdet i nøkkelfila { "type": "service_account", ... }'></textarea>
+                </label>
+                <p class="hint" id="sm-sa-status"></p>
+                <details>
+                  <summary>Hvordan lage en service-konto</summary>
+                  <ol>
+                    <li>console.cloud.google.com → nytt prosjekt</li>
+                    <li>Aktiver <b>Google Drive API</b></li>
+                    <li>Lag en <b>Service Account</b> → legg til en <b>JSON-nøkkel</b></li>
+                    <li>Del Drive-mappen med service-kontoens e-post (Leser)</li>
+                    <li>Lim inn nøkkel-JSON her</li>
+                  </ol>
+                </details>
+              </div>
+
+              <div data-when-auth="apiKey">
+                <label>API-nøkkel
+                  <input name="apiKey" placeholder="AIza..." />
+                </label>
+              </div>
+            </div>
+
+            <div data-when="localFolder">
+              <label>Mappesti
+                <input name="path" placeholder="./data/sample eller /absolutt/sti" />
+              </label>
+            </div>
+
+            <label class="row">
+              <input type="checkbox" name="recursive" checked /> Inkluder undermapper
+            </label>
+            <label>Filfilter (regex)
+              <input name="filePattern" placeholder="\.json$" />
+            </label>
+            <label class="row">
+              <input type="checkbox" name="enabled" checked /> Aktiv
+            </label>
+
+            <p id="sm-error" class="form-error" hidden></p>
+            <div class="form-actions">
+              <button type="button" id="sm-cancel" class="ghost" hidden>Avbryt</button>
+              <button type="submit" id="sm-save">Lagre kilde</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <main>
     <aside id="sidebar">

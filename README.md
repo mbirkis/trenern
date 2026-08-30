@@ -35,7 +35,14 @@ Env-overstyring: `PORT`, `HOST`, `TRENERN_CONFIG` (alternativ config-sti).
 
 ## Datakilder
 
-Hver kilde i `sources[]` har `id`, `type`, `enabled` og typespesifikke felter.
+Kilder kan legges til og endres direkte i web-UI-et: klikk **Kilder** øverst til
+høyre. Der kan du legge til en Google Drive-mappe (lime inn service-konto-JSON
+eller API-nøkkel), teste tilkoblingen, synke én kilde av gangen, og aktivere/
+slette kilder. Endringene lagres i `config/config.json`, og opplastede nøkler
+skrives til `config/keys/<id>.json` (begge er git-ignorert). Ingen omstart trengs.
+
+Alternativt kan `sources[]` redigeres for hånd. Hver kilde har `id`, `type`,
+`enabled` og typespesifikke felter.
 
 ### `localFolder`
 
@@ -115,6 +122,11 @@ Ingest cacher `ref + modifiedTime + size` per kilde, så uendrede filer hoppes o
 | `GET` | `/api/sources` | Konfigurerte kilder |
 | `POST` | `/api/ingest` `{force?, sourceId?}` | Kjør ingest nå |
 | `GET` | `/api/ingest/status` | Status / siste resultat |
+| `GET` | `/api/sources` | `{ types, sources }` (uten hemmeligheter) |
+| `POST` | `/api/sources` | Legg til kilde |
+| `PUT` | `/api/sources/:id` | Endre kilde (tomt nøkkelfelt = behold eksisterende) |
+| `DELETE` | `/api/sources/:id` | Slett kilde + nøkkelfil |
+| `POST` | `/api/sources/:id/test` | Test tilkobling (lister filer) |
 
 ## Lagring
 

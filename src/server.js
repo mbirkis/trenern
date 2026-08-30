@@ -1,7 +1,15 @@
 import express from 'express';
 import config from './config.js';
 import * as store from './store.js';
-import { buildSources } from './sources/index.js';
+import { buildSources, registeredSourceTypes } from './sources/index.js';
+import {
+  listSourceConfigs,
+  getSourceConfig,
+  addSource,
+  updateSource,
+  removeSource,
+  testSource,
+} from './sources/manage.js';
 import { listParsers } from './parsers/index.js';
 import { runIngest, ingestStatus, startScheduler } from './ingest.js';
 import { hrZoneBounds } from './model.js';
@@ -21,13 +29,36 @@ app.get('/api/config', (_req, res) => {
 });
 
 app.get('/api/sources', (_req, res) => {
-  const sources = buildSources({ includeDisabled: true }).map((s) => ({
-    id: s.id,
-    type: s.type,
-    enabled: s.enabled,
-    describe: s.describe?.() || s.type,
-  }));
-  res.json(sources);
+  res.json({ types: registeredSourceTypes(), sources: listSourceConfigs() });
+});
+
+app.get('/api/sources/:id', (req, res) => {
+  const s = getSourceConfig(req.params.id);
+  if (!s) return res.status(404).json({ error: 'not found' });
+  res.json(s);
+});
+
+app.post('/api/sources', (req, res) => {
+  const { errors, source } = addSource(req.body || {});
+  if (errors) return res.status(400).json({ errors });
+  res.status(201).json(source);
+});
+
+app.put('/api/sources/:id', (req, res) => {
+  const { errors, source } = updateSource(req.params.id, req.body || {});
+  if (errors)
+    return res
+      .status(errors[0] === 'kilde ikke funnet' ? 404 : 400)
+      .json({ errors });
+  res.json(source);
+});
+
+app.delete('/api/sources/:id', (req, res) => {
+  res.json(removeSource(req.params.id));
+});
+
+app.post('/api/sources/:id/test', async (req, res) => {
+  res.json(await testSource(req.params.id));
 });
 
 app.get('/api/activities', (req, res) => {

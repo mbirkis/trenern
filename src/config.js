@@ -30,10 +30,16 @@ config.paths = {
   data: path.join(ROOT, 'data'),
   activities: path.join(ROOT, 'data', 'activities'),
   cache: path.join(ROOT, 'data', 'cache'),
+  keys: path.join(ROOT, 'config', 'keys'),
   public: path.join(ROOT, 'public'),
 };
 
-for (const p of [config.paths.data, config.paths.activities, config.paths.cache]) {
+for (const p of [
+  config.paths.data,
+  config.paths.activities,
+  config.paths.cache,
+  config.paths.keys,
+]) {
   fs.mkdirSync(p, { recursive: true });
 }
 
@@ -41,6 +47,15 @@ for (const p of [config.paths.data, config.paths.activities, config.paths.cache]
 export function resolvePath(p) {
   if (!p) return p;
   return path.isAbsolute(p) ? p : path.resolve(ROOT, p);
+}
+
+/**
+ * Persist the current in-memory config back to config.json (pretty-printed).
+ * The derived `paths` field is stripped before writing.
+ */
+export function saveConfig() {
+  const { paths, ...rest } = config;
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(rest, null, 2) + '\n');
 }
 
 /** Effective max heart rate: explicit config, else 220 - age, else 190. */

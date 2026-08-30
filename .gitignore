@@ -2,6 +2,7 @@ node_modules/
 config/config.json
 config/gdrive-service-account.json
 config/*token*.json
+config/keys/
 data/activities/
 data/cache/
 data/index.json

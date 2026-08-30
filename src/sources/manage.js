@@ -1,0 +1,218 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import config, { saveConfig, resolvePath } from '../config.js';
+import { registeredSourceTypes, buildSources } from './index.js';
+
+/**
+ * CRUD for `config.sources`, driven by the web UI. Secrets (API keys, service
+ * account private keys) are stored on disk under config/keys/ and never sent
+ * back to the browser.
+ */
+
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+    .slice(0, 40);
+}
+
+function ensureSources() {
+  if (!Array.isArray(config.sources)) config.sources = [];
+  return config.sources;
+}
+
+function keyFileFor(id) {
+  return path.join(config.paths.keys, `${id}.json`);
+}
+
+/** Public, secret-free view of one source config. */
+export function redactSource(cfg) {
+  const auth = cfg.auth || {};
+  const out = {
+    id: cfg.id,
+    type: cfg.type,
+    label: cfg.label || null,
+    enabled: !!cfg.enabled,
+    recursive: cfg.recursive !== false,
+    filePattern: cfg.filePattern || '\\.json$',
+  };
+  if (cfg.type === 'googleDrive') {
+    out.folderId =
+      cfg.folderId && !String(cfg.folderId).startsWith('PUT_') ? cfg.folderId : '';
+    out.authMethod = auth.method || (auth.apiKey ? 'apiKey' : 'serviceAccount');
+    const keyPath = auth.serviceAccountKeyFile
+      ? resolvePath(auth.serviceAccountKeyFile)
+      : null;
+    out.hasServiceAccountKey = !!(keyPath && fs.existsSync(keyPath));
+    out.hasApiKey = !!auth.apiKey;
+    out.serviceAccountEmail = readServiceAccountEmail(keyPath);
+  }
+  if (cfg.type === 'localFolder') out.path = cfg.path || '';
+  return out;
+}
+
+function readServiceAccountEmail(keyPath) {
+  if (!keyPath || !fs.existsSync(keyPath)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(keyPath, 'utf8')).client_email || null;
+  } catch {
+    return null;
+  }
+}
+
+export function listSourceConfigs() {
+  return ensureSources().map(redactSource);
+}
+
+export function getSourceConfig(id) {
+  const cfg = ensureSources().find((s) => s.id === id);
+  return cfg ? redactSource(cfg) : null;
+}
+
+function validate(input, { existingId } = {}) {
+  const errors = [];
+  const type = input.type;
+  if (!registeredSourceTypes().includes(type)) {
+    errors.push(`ukjent type "${type}"`);
+    return { errors };
+  }
+
+  let id = input.id || slugify(input.label) || `${type}-${Date.now()}`;
+  id = slugify(id) || `${type}-${Date.now()}`;
+  if (!existingId && ensureSources().some((s) => s.id === id)) {
+    errors.push(`kilde-id "${id}" finnes allerede`);
+  }
+
+  const cfg = {
+    id,
+    type,
+    label: (input.label || '').trim() || null,
+    enabled: input.enabled !== false,
+    recursive: input.recursive !== false,
+    filePattern: (input.filePattern || '').trim() || '\\.json$',
+  };
+  try {
+    new RegExp(cfg.filePattern);
+  } catch {
+    errors.push('filePattern er ikke et gyldig regulært uttrykk');
+  }
+
+  if (type === 'googleDrive') {
+    const folderId = (input.folderId || '').trim();
+    if (!folderId) errors.push('folderId er påkrevd for Google Drive');
+    cfg.folderId = folderId;
+
+    const method = input.authMethod === 'apiKey' ? 'apiKey' : 'serviceAccount';
+    cfg.auth = { method };
+    if (method === 'apiKey') {
+      const apiKey = (input.apiKey || '').trim();
+      if (!apiKey && !input._keepSecret) errors.push('apiKey er påkrevd');
+      if (apiKey) cfg.auth.apiKey = apiKey;
+    } else {
+      cfg.auth.serviceAccountKeyFile = `./config/keys/${id}.json`;
+      let sa = input.serviceAccountKey;
+      if (typeof sa === 'string' && sa.trim()) {
+        try {
+          sa = JSON.parse(sa);
+        } catch {
+          errors.push('serviceAccountKey er ikke gyldig JSON');
+          sa = null;
+        }
+      }
+      if (sa && typeof sa === 'object') {
+        if (!sa.client_email || !sa.private_key) {
+          errors.push('service account-JSON mangler client_email / private_key');
+        } else {
+          cfg._pendingKey = sa;
+        }
+      } else if (!input._keepSecret) {
+        errors.push('service account-JSON er påkrevd');
+      }
+    }
+  } else if (type === 'localFolder') {
+    const p = (input.path || '').trim();
+    if (!p) errors.push('path er påkrevd for lokal mappe');
+    cfg.path = p;
+  }
+
+  return { errors, cfg };
+}
+
+function commitKey(cfg) {
+  if (cfg._pendingKey) {
+    fs.writeFileSync(keyFileFor(cfg.id), JSON.stringify(cfg._pendingKey, null, 2));
+    delete cfg._pendingKey;
+  }
+}
+
+export function addSource(input) {
+  const { errors, cfg } = validate(input);
+  if (errors.length) return { errors };
+  commitKey(cfg);
+  ensureSources().push(cfg);
+  saveConfig();
+  return { source: redactSource(cfg) };
+}
+
+export function updateSource(id, input) {
+  const list = ensureSources();
+  const idx = list.findIndex((s) => s.id === id);
+  if (idx === -1) return { errors: ['kilde ikke funnet'] };
+  const prev = list[idx];
+
+  // Keep existing secret if the form did not supply a new one.
+  const keepSecret =
+    !input.serviceAccountKey &&
+    !input.apiKey &&
+    (redactSource(prev).hasServiceAccountKey || redactSource(prev).hasApiKey);
+
+  const { errors, cfg } = validate(
+    { ...input, id, type: input.type || prev.type, _keepSecret: keepSecret },
+    { existingId: id }
+  );
+  if (errors.length) return { errors };
+
+  // Carry forward an untouched secret.
+  if (keepSecret && cfg.type === 'googleDrive') {
+    if (prev.auth?.apiKey && cfg.auth.method === 'apiKey') {
+      cfg.auth.apiKey = prev.auth.apiKey;
+    }
+    if (prev.auth?.serviceAccountKeyFile && cfg.auth.method === 'serviceAccount') {
+      cfg.auth.serviceAccountKeyFile = prev.auth.serviceAccountKeyFile;
+    }
+  }
+  commitKey(cfg);
+  list[idx] = cfg;
+  saveConfig();
+  return { source: redactSource(cfg) };
+}
+
+export function removeSource(id) {
+  const list = ensureSources();
+  const idx = list.findIndex((s) => s.id === id);
+  if (idx === -1) return { removed: false };
+  list.splice(idx, 1);
+  saveConfig();
+  try {
+    fs.unlinkSync(keyFileFor(id));
+  } catch {}
+  return { removed: true };
+}
+
+/** Try listing files for one source; used by the "Test tilkobling" button. */
+export async function testSource(id) {
+  const src = buildSources({ includeDisabled: true }).find((s) => s.id === id);
+  if (!src) return { ok: false, error: 'kilde ikke funnet' };
+  try {
+    const files = await src.listFiles();
+    return {
+      ok: true,
+      fileCount: files.length,
+      sample: files.slice(0, 5).map((f) => f.name),
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}

@@ -27,6 +27,7 @@ async function init() {
 
   document.getElementById('sync-btn').addEventListener('click', sync);
   document.getElementById('type-filter').addEventListener('change', renderList);
+  initSourcesModal();
 
   try {
     appConfig = await fetchJSON('/api/config');
@@ -289,6 +290,225 @@ function addLegend() {
     return div;
   };
   legend.addTo(map);
+}
+
+// ---- sources modal ----
+function initSourcesModal() {
+  const modal = document.getElementById('sources-modal');
+  const form = document.getElementById('sm-form');
+  const openBtn = document.getElementById('sources-btn');
+  const close = () => { modal.hidden = true; };
+
+  openBtn.addEventListener('click', async () => {
+    modal.hidden = false;
+    resetSourceForm();
+    await renderSourceList();
+  });
+  document.getElementById('sm-close').addEventListener('click', close);
+  document.getElementById('sm-cancel').addEventListener('click', resetSourceForm);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.hidden) close();
+  });
+
+  form.type.addEventListener('change', syncFormVisibility);
+  form.authMethod.addEventListener('change', syncFormVisibility);
+  form.addEventListener('submit', onSourceSubmit);
+  syncFormVisibility();
+}
+
+function syncFormVisibility() {
+  const form = document.getElementById('sm-form');
+  const type = form.type.value;
+  const auth = form.authMethod.value;
+  form.querySelectorAll('[data-when]').forEach((el) => {
+    el.classList.toggle('hide', el.dataset.when !== type);
+  });
+  form.querySelectorAll('[data-when-auth]').forEach((el) => {
+    el.classList.toggle('hide', el.dataset.whenAuth !== auth);
+  });
+}
+
+function resetSourceForm() {
+  const form = document.getElementById('sm-form');
+  form.reset();
+  form.editingId.value = '';
+  form.recursive.checked = true;
+  form.enabled.checked = true;
+  document.getElementById('sm-form-title').textContent = 'Legg til kilde';
+  document.getElementById('sm-save').textContent = 'Lagre kilde';
+  document.getElementById('sm-cancel').hidden = true;
+  document.getElementById('sm-sa-status').textContent = '';
+  hideFormError();
+  syncFormVisibility();
+}
+
+function fillSourceForm(s) {
+  const form = document.getElementById('sm-form');
+  resetSourceForm();
+  form.editingId.value = s.id;
+  form.type.value = s.type;
+  form.label.value = s.label || '';
+  form.recursive.checked = s.recursive !== false;
+  form.enabled.checked = !!s.enabled;
+  form.filePattern.value = s.filePattern || '';
+  if (s.type === 'googleDrive') {
+    form.folderId.value = s.folderId || '';
+    form.authMethod.value = s.authMethod || 'serviceAccount';
+    const st = document.getElementById('sm-sa-status');
+    if (s.hasServiceAccountKey) {
+      st.textContent = `Nøkkel lagret${s.serviceAccountEmail ? ' (' + s.serviceAccountEmail + ')' : ''}. La feltet stå tomt for å beholde.`;
+    } else if (s.hasApiKey) {
+      st.textContent = 'API-nøkkel lagret. La feltet stå tomt for å beholde.';
+    }
+  } else if (s.type === 'localFolder') {
+    form.path.value = s.path || '';
+  }
+  document.getElementById('sm-form-title').textContent = `Rediger «${s.label || s.id}»`;
+  document.getElementById('sm-save').textContent = 'Lagre endringer';
+  document.getElementById('sm-cancel').hidden = false;
+  syncFormVisibility();
+}
+
+function readSourceForm() {
+  const form = document.getElementById('sm-form');
+  const g = (n) => (form[n] ? form[n].value.trim() : '');
+  return {
+    id: form.editingId.value || undefined,
+    type: form.type.value,
+    label: g('label'),
+    enabled: form.enabled.checked,
+    recursive: form.recursive.checked,
+    filePattern: g('filePattern'),
+    folderId: g('folderId'),
+    authMethod: form.authMethod.value,
+    serviceAccountKey: g('serviceAccountKey'),
+    apiKey: g('apiKey'),
+    path: g('path'),
+  };
+}
+
+async function onSourceSubmit(e) {
+  e.preventDefault();
+  hideFormError();
+  const body = readSourceForm();
+  const editingId = document.getElementById('sm-form').editingId.value;
+  const btn = document.getElementById('sm-save');
+  btn.disabled = true;
+  try {
+    const res = await fetch(
+      editingId ? `/api/sources/${editingId}` : '/api/sources',
+      {
+        method: editingId ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
+    );
+    const data = await res.json();
+    if (!res.ok) {
+      showFormError((data.errors || [data.error || 'ukjent feil']).join('\n'));
+      return;
+    }
+    resetSourceForm();
+    await renderSourceList();
+  } catch (err) {
+    showFormError(err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function renderSourceList() {
+  const ul = document.getElementById('sm-list');
+  let payload;
+  try {
+    payload = await fetchJSON('/api/sources');
+  } catch (e) {
+    ul.innerHTML = `<li class="src-test err">Kunne ikke laste kilder: ${escapeHtml(e.message)}</li>`;
+    return;
+  }
+  const sources = payload.sources || [];
+  ul.innerHTML = sources.map((s) => {
+    const detail = s.type === 'googleDrive'
+      ? `Drive-mappe ${s.folderId || '(mangler ID)'} · ${s.authMethod === 'apiKey' ? 'API-nøkkel' : 'service-konto'}${s.serviceAccountEmail ? ' · ' + escapeHtml(s.serviceAccountEmail) : ''}`
+      : `Mappe ${escapeHtml(s.path || '')}`;
+    return `<li class="src-item" data-id="${s.id}">
+      <div class="top">
+        <span class="name">${escapeHtml(s.label || s.id)}</span>
+        <span class="tag ${s.enabled ? '' : 'off'}">${s.enabled ? s.type : 'av'}</span>
+      </div>
+      <div class="meta">${detail}</div>
+      <div class="src-test" data-role="test"></div>
+      <div class="row-actions">
+        <button class="ghost" data-act="test">Test</button>
+        <button class="ghost" data-act="sync">Synk denne</button>
+        <button class="ghost" data-act="edit">Rediger</button>
+        <button class="danger" data-act="del">Slett</button>
+      </div>
+    </li>`;
+  }).join('');
+
+  ul.querySelectorAll('.src-item').forEach((li) => {
+    const id = li.dataset.id;
+    const src = sources.find((s) => s.id === id);
+    const testEl = li.querySelector('[data-role="test"]');
+    li.querySelector('[data-act="edit"]').onclick = () => fillSourceForm(src);
+    li.querySelector('[data-act="test"]').onclick = async (ev) => {
+      ev.target.disabled = true;
+      testEl.className = 'src-test';
+      testEl.textContent = 'tester …';
+      try {
+        const r = await fetchJSON(`/api/sources/${id}/test`, { method: 'POST' });
+        if (r.ok) {
+          testEl.className = 'src-test ok';
+          testEl.textContent = `OK — ${r.fileCount} fil(er)${r.sample && r.sample.length ? ': ' + r.sample.join(', ') : ''}`;
+        } else {
+          testEl.className = 'src-test err';
+          testEl.textContent = 'Feil: ' + r.error;
+        }
+      } catch (e) {
+        testEl.className = 'src-test err';
+        testEl.textContent = 'Feil: ' + e.message;
+      } finally {
+        ev.target.disabled = false;
+      }
+    };
+    li.querySelector('[data-act="sync"]').onclick = async (ev) => {
+      ev.target.disabled = true;
+      testEl.className = 'src-test';
+      testEl.textContent = 'synker …';
+      try {
+        const r = await fetchJSON('/api/ingest', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceId: id }),
+        });
+        testEl.className = r.errors && r.errors.length ? 'src-test err' : 'src-test ok';
+        testEl.textContent = `+${r.created} nye, ${r.updated} oppdatert` +
+          (r.errors && r.errors.length ? ` · ${r.errors.join('; ')}` : '');
+        await refresh();
+      } catch (e) {
+        testEl.className = 'src-test err';
+        testEl.textContent = 'Feil: ' + e.message;
+      } finally {
+        ev.target.disabled = false;
+      }
+    };
+    li.querySelector('[data-act="del"]').onclick = async () => {
+      if (!confirm(`Slette kilden «${src.label || id}»?`)) return;
+      await fetch(`/api/sources/${id}`, { method: 'DELETE' });
+      await renderSourceList();
+    };
+  });
+}
+
+function showFormError(msg) {
+  const el = document.getElementById('sm-error');
+  el.textContent = msg;
+  el.hidden = false;
+}
+function hideFormError() {
+  document.getElementById('sm-error').hidden = true;
 }
 
 // ---- formatting helpers ----

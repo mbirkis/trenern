@@ -51,6 +51,99 @@ button {
   cursor: pointer;
 }
 button:disabled { opacity: 0.5; cursor: default; }
+button.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+button.ghost:hover { background: var(--panel-2); }
+button.danger { background: var(--z5); color: #fff; }
+
+/* --- sources modal --- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  z-index: 1000;
+  overflow-y: auto;
+}
+.modal-backdrop[hidden] { display: none; }
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 560px;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-head h2 { font-size: 16px; margin: 0; }
+.icon-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.modal-body { padding: 16px 18px 20px; }
+
+.src-list { list-style: none; margin: 0 0 18px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.src-list:empty::after { content: "Ingen kilder konfigurert ennå."; color: var(--muted); font-size: 13px; }
+.src-item {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.src-item .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.src-item .name { font-weight: 600; }
+.src-item .tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.src-item .tag.off { color: var(--z5); border-color: var(--z5); }
+.src-item .meta { color: var(--muted); font-size: 12px; margin-top: 4px; word-break: break-all; }
+.src-item .row-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.src-item .row-actions button { padding: 4px 10px; font-size: 12px; font-weight: 500; }
+.src-test { font-size: 12px; margin-top: 6px; }
+.src-test.ok { color: var(--z2); }
+.src-test.err { color: var(--z5); }
+
+#sm-form { display: flex; flex-direction: column; gap: 10px; }
+#sm-form h3 { margin: 0; }
+#sm-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+#sm-form label.row { flex-direction: row; align-items: center; gap: 8px; color: var(--text); font-size: 13px; }
+#sm-form input[type="text"],
+#sm-form input:not([type]),
+#sm-form select,
+#sm-form textarea {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: inherit;
+  width: 100%;
+}
+#sm-form textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.src-form-wrap { border-top: 1px solid var(--line); padding-top: 14px; }
+.hint { color: var(--muted); font-size: 11px; margin: 2px 0 0; }
+.hint code { background: var(--panel-2); padding: 1px 4px; border-radius: 3px; }
+#sm-form details { font-size: 12px; color: var(--muted); }
+#sm-form details summary { cursor: pointer; }
+#sm-form details ol { margin: 6px 0 0 18px; padding: 0; }
+.form-error { color: var(--z5); font-size: 12px; margin: 0; white-space: pre-line; }
+.form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+[data-when], [data-when-auth] { display: contents; }
+[data-when].hide, [data-when-auth].hide { display: none; }
 
 main {
   flex: 1;
