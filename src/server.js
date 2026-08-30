@@ -61,21 +61,39 @@ app.post('/api/sources/:id/test', async (req, res) => {
   res.json(await testSource(req.params.id));
 });
 
-app.get('/api/activities', (req, res) => {
-  const { type, from, to } = req.query;
-  res.json(store.list({ type, from, to }));
+app.get('/api/activities', async (req, res, next) => {
+  try {
+    const { type, from, to } = req.query;
+    res.json(await store.list({ type, from, to }));
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.get('/api/stats', (_req, res) => res.json(store.stats()));
-
-app.get('/api/activities/:id', (req, res) => {
-  const a = store.get(req.params.id);
-  if (!a) return res.status(404).json({ error: 'not found' });
-  res.json(a);
+app.get('/api/stats', async (_req, res, next) => {
+  try {
+    res.json(await store.stats());
+  } catch (err) {
+    next(err);
+  }
 });
 
-app.delete('/api/activities/:id', (req, res) => {
-  res.json({ removed: store.remove(req.params.id) });
+app.get('/api/activities/:id', async (req, res, next) => {
+  try {
+    const a = await store.get(req.params.id);
+    if (!a) return res.status(404).json({ error: 'not found' });
+    res.json(a);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/activities/:id', async (req, res, next) => {
+  try {
+    res.json({ removed: await store.remove(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.get('/api/ingest/status', (_req, res) => res.json(ingestStatus()));
@@ -92,19 +110,45 @@ app.post('/api/ingest', async (req, res) => {
 
 app.use(express.static(config.paths.public));
 
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  console.error('API-feil:', err);
+  res.status(500).json({ error: err.message });
+});
+
 const { port, host } = config.server;
-app.listen(port, host, async () => {
-  console.log(`trenern kjører på http://${host}:${port}`);
-  startScheduler();
-  if (config.ingest?.autoOnStart) {
-    console.log('kjører oppstarts-ingest ...');
-    try {
-      const r = await runIngest();
-      console.log(
-        `ingest ferdig: ${r.created} nye, ${r.updated} oppdatert, ${r.errors.length} feil`
-      );
-    } catch (e) {
-      console.error('oppstarts-ingest feilet:', e.message);
+
+async function main() {
+  await store.ready(); // open DB + run one-time JSON migration before serving
+
+  app.listen(port, host, async () => {
+    console.log(`trenern kjører på http://${host}:${port}`);
+    startScheduler();
+    if (config.ingest?.autoOnStart) {
+      console.log('kjører oppstarts-ingest ...');
+      try {
+        const r = await runIngest();
+        console.log(
+          `ingest ferdig: ${r.created} nye, ${r.updated} oppdatert, ${r.errors.length} feil`
+        );
+      } catch (e) {
+        console.error('oppstarts-ingest feilet:', e.message);
+      }
     }
-  }
+  });
+}
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, async () => {
+    try {
+      await store.close();
+    } finally {
+      process.exit(0);
+    }
+  });
+}
+
+main().catch((err) => {
+  console.error('oppstart feilet:', err);
+  process.exit(1);
 });

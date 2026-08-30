@@ -15,6 +15,12 @@ export function createLocalFolderSource(cfg) {
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
     } catch (err) {
+      // A missing folder is not fatal — just yields no files (common in
+      // container deployments where the sample folder isn't shipped).
+      if (err.code === 'ENOENT') {
+        if (dir === root) console.warn(`kilde ${cfg.id}: mappe finnes ikke (${dir})`);
+        return [];
+      }
       throw new Error(`kan ikke lese mappe ${dir}: ${err.message}`);
     }
     const out = [];

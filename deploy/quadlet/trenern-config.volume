@@ -1,0 +1,4 @@
+# config.json (seeded from config.example.json on first start) and uploaded
+# Google Drive service-account keys under config/keys/.
+# Podman creates a named volume "systemd-trenern-config".
+[Volume]

@@ -1,0 +1,12 @@
+# Optional: let Podman build the image from source as a dependency of the
+# container unit. Reference it with `Image=trenern.build` in trenern.container.
+#
+# Point SetWorkingDirectory at your checkout of this repo. A git URL also works
+# (public repos): SetWorkingDirectory=https://github.com/mbirkis/trenern.git
+[Build]
+ImageTag=localhost/trenern:latest
+File=Containerfile
+SetWorkingDirectory=%h/src/trenern
+
+[Install]
+WantedBy=default.target

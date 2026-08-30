@@ -1,0 +1,39 @@
+# trenern — standalone (SQLite backend). Copy to ~/.config/containers/systemd/
+# for a rootless user service, or /etc/containers/systemd/ for system-wide.
+#
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now trenern.service
+#   journalctl --user -u trenern -f
+#
+# The app is reachable on http://localhost:3005 . Edit config via the web UI
+# ("Kilder") or directly in the trenern-config volume.
+
+[Unit]
+Description=trenern – self-hosted treningssporing
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/trenern:latest
+# Build automatically from source instead of a prebuilt image:
+#Image=trenern.build
+
+PublishPort=3005:3005
+Volume=trenern-data.volume:/app/data
+Volume=trenern-config.volume:/app/config
+Environment=TZ=Europe/Oslo
+Environment=HOST=0.0.0.0
+
+HealthCmd=node -e "fetch('http://127.0.0.1:3005/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HealthInterval=30s
+HealthStartPeriod=20s
+
+# Pull a newer image on `podman auto-update` when using a registry image.
+AutoUpdate=registry
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target

@@ -11,13 +11,33 @@ arkitekturen er plugin-basert så flere kilder og filformater kan legges til sen
 
 ```bash
 npm install
-cp config/config.example.json config/config.json   # gjøres av installasjonen, rediger etter behov
+cp config/config.example.json config/config.json   # opprettes automatisk hvis den mangler
 npm run sample                                       # lager 3 eksempel-økter i data/sample/
 npm start                                            # http://127.0.0.1:3005
 ```
 
 `npm start` kjører en ingest ved oppstart og deretter hvert `ingest.intervalMinutes`.
 Knappen **Synk nå** i toppen trigger en manuell henting.
+
+## Kjøre med Podman (Quadlet)
+
+```bash
+podman build -t localhost/trenern:latest -f Containerfile .
+```
+
+Quadlet-enheter for både et **standalone**-oppsett (SQLite) og et oppsett med
+**PostgreSQL i egen container** ligger i [`deploy/quadlet/`](deploy/quadlet/).
+Full veiledning: [`deploy/README.md`](deploy/README.md). Kort fortalt:
+
+```bash
+cp deploy/quadlet/trenern.container deploy/quadlet/trenern-*.volume \
+   ~/.config/containers/systemd/
+systemctl --user daemon-reload
+systemctl --user enable --now trenern.service   # http://localhost:3005
+```
+
+Containeren lager `config/config.json` fra eksempelet ved første start, og
+persisterer database + config i to named volumes.
 
 ## Konfigurasjon (`config/config.json`)
 
@@ -29,9 +49,14 @@ Knappen **Synk nå** i toppen trigger en manuell henting.
 | `athlete.restingHr` | Hvilepuls (vises i panelet) |
 | `ingest.autoOnStart` | Kjør ingest når serveren starter |
 | `ingest.intervalMinutes` | Intervall for automatisk ingest (`0` = av) |
+| `storage.backend` | `"sqlite"` (standard) eller `"postgres"` |
+| `storage.sqlite.file` | Sti til SQLite-fila (standard `./data/trenern.db`) |
+| `storage.postgres.url` | Tilkoblingsstreng når backend er `postgres` |
 | `sources[]` | Liste med datakilder, se under |
 
-Env-overstyring: `PORT`, `HOST`, `TRENERN_CONFIG` (alternativ config-sti).
+Env-overstyring: `PORT`, `HOST`, `TRENERN_CONFIG` (alternativ config-sti),
+`DATABASE_URL` (setter Postgres-backend), `TRENERN_SQLITE_FILE`,
+`TRENERN_DB_BACKEND`.
 
 ## Datakilder
 
@@ -130,9 +155,19 @@ Ingest cacher `ref + modifiedTime + size` per kilde, så uendrede filer hoppes o
 
 ## Lagring
 
-Normaliserte økter lagres som JSON under `data/activities/<id>.json`, med et
-sammendrags-indeks i `data/index.json`. Ingen database kreves. `data/` er
-git-ignorert.
+Normaliserte økter lagres i en database. Backend velges av `storage.backend`:
+
+- **`sqlite`** (standard) — én fil, `data/trenern.db`. Ingen ekstern tjeneste.
+- **`postgres`** — sett `storage.postgres.url` eller `DATABASE_URL`
+  (`postgres://bruker:pass@vert:5432/db`). Tabellen opprettes automatisk.
+
+Begge backendene deler skjema (`src/db/shared.js`): skalarkolonner for lister,
+filter og statistikk, pluss hele det normaliserte objektet (inkl. sporet) i en
+`data`-kolonne (`TEXT`/`jsonb`).
+
+Har du kjørt en tidligere versjon med JSON-lager, importeres
+`data/activities/*.json` automatisk til databasen ved første oppstart (én gang,
+markert med `data/.migrated-to-db`). Manuelt: `npm run migrate`.
 
 ## Scripts
 
@@ -141,4 +176,5 @@ npm start                    # web-server + planlagt ingest
 npm run ingest               # én ingest-runde fra CLI
 npm run ingest -- --force    # ignorer cache
 npm run sample               # regenerer eksempeldata
+npm run migrate              # importer gammelt JSON-lager til databasen
 ```

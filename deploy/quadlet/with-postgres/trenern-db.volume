@@ -1,0 +1,2 @@
+# PostgreSQL data directory. Named volume "systemd-trenern-db".
+[Volume]

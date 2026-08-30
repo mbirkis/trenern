@@ -1,0 +1,10 @@
+.git
+node_modules
+data
+config/config.json
+config/keys
+config/gdrive-service-account.json
+deploy
+*.log
+.DS_Store
+scratchpad

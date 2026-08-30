@@ -6,14 +6,17 @@
   "scripts": {
     "start": "node src/server.js",
     "ingest": "node scripts/ingest-once.mjs",
-    "sample": "node scripts/make-sample-data.mjs"
+    "sample": "node scripts/make-sample-data.mjs",
+    "migrate": "node scripts/migrate-json-to-db.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
-    "googleapis": "^176.0.0"
+    "googleapis": "^176.0.0",
+    "pg": "^8.23.0"
   }
 }

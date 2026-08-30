@@ -12,6 +12,15 @@
     "autoOnStart": true,
     "intervalMinutes": 30
   },
+  "storage": {
+    "backend": "sqlite",
+    "sqlite": {
+      "file": "./data/trenern.db"
+    },
+    "postgres": {
+      "url": null
+    }
+  },
   "sources": [
     {
       "id": "local-sample",

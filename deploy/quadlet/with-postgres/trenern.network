@@ -1,0 +1,3 @@
+# Shared network so the app can reach the database by container name.
+# Creates a podman network "systemd-trenern".
+[Network]

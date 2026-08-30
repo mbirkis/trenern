@@ -32,6 +32,7 @@ export function ingestStatus() {
 export async function runIngest(opts = {}) {
   if (running) return { skipped: true, reason: 'allerede i gang' };
   running = true;
+  await store.ready(); // ensure DB is open (and legacy JSON migrated) once
   const startedAt = new Date().toISOString();
   const cache = loadCache();
   const result = {
@@ -68,7 +69,7 @@ export async function runIngest(opts = {}) {
             result.filesParsed++;
             for (const a of activities) {
               a.sourceName = file.name;
-              const outcome = store.upsert(a);
+              const outcome = await store.upsert(a);
               if (outcome === 'created') result.created++;
               else result.updated++;
               sr.activities++;

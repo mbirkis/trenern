@@ -1,0 +1,3 @@
+# Database (SQLite file), ingest cache and the .migrated marker live here.
+# Podman creates a named volume "systemd-trenern-data".
+[Volume]

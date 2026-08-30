@@ -1,0 +1,31 @@
+# PostgreSQL for trenern.
+#
+# Create the password file first (rootless user example):
+#   mkdir -p ~/.config/trenern
+#   printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" > ~/.config/trenern/db.env
+#   chmod 600 ~/.config/trenern/db.env
+# Use the SAME password in app.env's DATABASE_URL (see trenern.container).
+
+[Unit]
+Description=trenern PostgreSQL
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/postgres:16-alpine
+ContainerName=trenern-db
+Network=trenern.network
+Volume=trenern-db.volume:/var/lib/postgresql/data
+Environment=POSTGRES_USER=trenern
+Environment=POSTGRES_DB=trenern
+EnvironmentFile=%h/.config/trenern/db.env
+HealthCmd=pg_isready -U trenern -d trenern
+HealthInterval=10s
+HealthStartPeriod=15s
+
+[Service]
+Restart=always
+TimeoutStartSec=120
+
+[Install]
+WantedBy=default.target
