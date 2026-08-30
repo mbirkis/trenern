@@ -11,6 +11,11 @@ const TYPE_COLORS = {
 };
 const DEFAULT_VIEW = [61.5, 8.5];
 
+const ICON_ZOOM =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="15" y2="15" stroke-linecap="round"/><line x1="7" y1="4.8" x2="7" y2="9.2" stroke-linecap="round"/><line x1="4.8" y1="7" x2="9.2" y2="7" stroke-linecap="round"/></g></svg>';
+const ICON_TRASH =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.5h6.6L12 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></g></svg>';
+
 // Selectable background map services. `server: true` means "use whatever the
 // backend resolved in /api/config" (Tracestrack Topo or OSM fallback).
 const MAP_PROVIDERS = {
@@ -227,12 +232,59 @@ function renderList() {
         <span>${fmtDuration(a.movingTimeSec)}</span>
         ${a.avgHr ? `<span>${a.avgHr} bpm</span>` : ''}
       </div>
+      <div class="li-actions">
+        <button class="li-icon" data-act="zoom" title="Sentrer kartet på turen" aria-label="Sentrer kartet på turen">${ICON_ZOOM}</button>
+        <button class="li-icon danger" data-act="del" title="Slett økta" aria-label="Slett økta">${ICON_TRASH}</button>
+      </div>
     </li>`).join('');
-  ul.querySelectorAll('li').forEach((li) =>
+  ul.querySelectorAll('li').forEach((li) => {
+    const id = li.dataset.id;
     li.addEventListener('click', () => {
-      if (li.dataset.id === selectedId) clearSelection();
-      else selectActivity(li.dataset.id);
-    }));
+      if (id === selectedId) clearSelection();
+      else selectActivity(id);
+    });
+    li.querySelector('[data-act="zoom"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      zoomToActivity(id);
+    });
+    li.querySelector('[data-act="del"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteActivity(id);
+    });
+  });
+}
+
+/** Fit the map to a single activity's route without opening its detail view. */
+async function zoomToActivity(id) {
+  let pts = [];
+  const r = routes.find((x) => x.id === id);
+  if (r && r.points && r.points.length >= 2) {
+    pts = r.points;
+  } else {
+    try {
+      const a = await fetchJSON(`/api/activities/${id}`);
+      pts = (a.track || [])
+        .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))
+        .map((p) => [p.lat, p.lon]);
+    } catch (_) { /* ignore */ }
+  }
+  if (pts.length >= 2) {
+    map.invalidateSize();
+    map.fitBounds(L.latLngBounds(pts).pad(0.1));
+  }
+}
+
+async function deleteActivity(id) {
+  const a = activities.find((x) => x.id === id);
+  if (!confirm(`Slette økta «${a ? a.name : id}»? Dette kan ikke angres.`)) return;
+  try {
+    await fetch(`/api/activities/${id}`, { method: 'DELETE' });
+  } catch (e) {
+    alert('Kunne ikke slette: ' + e.message);
+    return;
+  }
+  if (selectedId === id) selectedId = null;
+  await refresh();
 }
 
 async function selectActivity(id) {
