@@ -212,6 +212,14 @@ export function finalizeActivity(partial) {
     partial.id ||
     activityId({ source: partial.source, start, distanceM: m.distanceM, type });
 
+  // `autoName` is the parser/derived name; `customName` is a user override that
+  // wins for display and is preserved across re-ingest (see ingest.js).
+  const autoName = partial.name || defaultName(type, start);
+  const customName =
+    typeof partial.customName === 'string' && partial.customName.trim()
+      ? partial.customName.trim()
+      : null;
+
   const hrZones =
     partial.hrZones && partial.hrZones.length
       ? partial.hrZones
@@ -228,7 +236,9 @@ export function finalizeActivity(partial) {
     sourceRef: partial.sourceRef || null,
     parser: partial.parser || null,
     type,
-    name: partial.name || defaultName(type, start),
+    name: customName || autoName,
+    autoName,
+    customName,
     start,
     end,
     durationSec: round(m.durationSec),

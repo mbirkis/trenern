@@ -213,7 +213,7 @@ main {
 }
 #activity-list li:hover { background: var(--panel-2); }
 #activity-list li.active { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--accent); }
-.li-title { display: flex; justify-content: space-between; gap: 8px; padding-right: 52px; }
+.li-title { display: flex; justify-content: space-between; gap: 8px; padding-right: 80px; }
 
 .li-actions {
   position: absolute;
@@ -256,6 +256,10 @@ main {
 .detail-empty { color: var(--muted); text-align: center; margin-top: 40px; line-height: 1.7; }
 .back-btn { margin-bottom: 10px; padding: 5px 10px; font-size: 12px; font-weight: 500; }
 .detail h2 { font-size: 16px; margin: 0 0 2px; }
+.detail-title { display: flex; align-items: center; gap: 8px; }
+.detail-title span { flex: 1; min-width: 0; }
+.detail-title .li-icon { flex: none; opacity: 0.7; }
+.detail-title .li-icon:hover { opacity: 1; }
 .detail .sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
 
 .metric-grid {

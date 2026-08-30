@@ -13,6 +13,8 @@ const DEFAULT_VIEW = [61.5, 8.5];
 
 const ICON_ZOOM =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="7" r="4.5"/><line x1="10.5" y1="10.5" x2="15" y2="15" stroke-linecap="round"/><line x1="7" y1="4.8" x2="7" y2="9.2" stroke-linecap="round"/><line x1="4.8" y1="7" x2="9.2" y2="7" stroke-linecap="round"/></g></svg>';
+const ICON_EDIT =
+  '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11.4 2.6l2 2L6 12l-3 1 1-3z"/><path d="M10 4l2 2"/></g></svg>';
 const ICON_TRASH =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.5h6.6L12 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></g></svg>';
 
@@ -241,6 +243,7 @@ function renderList() {
         ${a.avgHr ? `<span>${a.avgHr} bpm</span>` : ''}
       </div>
       <div class="li-actions">
+        <button class="li-icon" data-act="rename" title="Gi nytt navn" aria-label="Gi nytt navn">${ICON_EDIT}</button>
         <button class="li-icon" data-act="zoom" title="Sentrer kartet på turen" aria-label="Sentrer kartet på turen">${ICON_ZOOM}</button>
         <button class="li-icon danger" data-act="del" title="Slett økta" aria-label="Slett økta">${ICON_TRASH}</button>
       </div>
@@ -250,6 +253,10 @@ function renderList() {
     li.addEventListener('click', () => {
       if (id === selectedId) clearSelection();
       else selectActivity(id);
+    });
+    li.querySelector('[data-act="rename"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      renameActivity(activities.find((x) => x.id === id) || { id });
     });
     li.querySelector('[data-act="zoom"]').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -280,6 +287,28 @@ async function zoomToActivity(id) {
     map.invalidateSize();
     map.fitBounds(L.latLngBounds(pts).pad(0.1));
   }
+}
+
+/** Prompt for a custom name; empty input resets to the auto-generated name. */
+async function renameActivity(a) {
+  const current = a.customName || a.name || '';
+  const input = prompt(
+    'Nytt navn for aktiviteten (la stå tomt for å tilbakestille):',
+    current
+  );
+  if (input === null) return;
+  try {
+    const r = await fetch(`/api/activities/${a.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: input }),
+    });
+    if (!r.ok) throw new Error(`${r.status}`);
+  } catch (e) {
+    alert('Kunne ikke lagre navnet: ' + e.message);
+    return;
+  }
+  await refresh();
 }
 
 async function deleteActivity(id) {
@@ -410,8 +439,11 @@ function renderDetail(a) {
 
   el.innerHTML = `
     <button id="back-to-all" class="ghost back-btn">← Alle turer</button>
-    <h2>${escapeHtml(a.name)}</h2>
-    <div class="sub">${TYPE_LABELS[a.type] || a.type} · ${fmtDateTime(a.start)} · kilde: ${escapeHtml(a.source)}${a.sourceName ? ' / ' + escapeHtml(a.sourceName) : ''}</div>
+    <h2 class="detail-title">
+      <span>${escapeHtml(a.name)}</span>
+      <button id="rename-act" class="li-icon" title="Gi nytt navn" aria-label="Gi nytt navn">${ICON_EDIT}</button>
+    </h2>
+    <div class="sub">${TYPE_LABELS[a.type] || a.type} · ${fmtDateTime(a.start)} · kilde: ${escapeHtml(a.source)}${a.sourceName ? ' / ' + escapeHtml(a.sourceName) : ''}${a.customName ? ' · egendefinert navn' : ''}</div>
     <div class="metric-grid">
       ${metrics.map(([k, v, u]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v} <small>${u}</small></div></div>`).join('')}
     </div>
@@ -424,6 +456,8 @@ function renderDetail(a) {
   `;
   const back = document.getElementById('back-to-all');
   if (back) back.addEventListener('click', clearSelection);
+  const rn = document.getElementById('rename-act');
+  if (rn) rn.addEventListener('click', () => renameActivity(a));
 }
 
 function chartBlock(title, series, unit, xKm) {

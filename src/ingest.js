@@ -69,6 +69,12 @@ export async function runIngest(opts = {}) {
             result.filesParsed++;
             for (const a of activities) {
               a.sourceName = file.name;
+              // Preserve a user-assigned name across re-ingest.
+              const existing = await store.get(a.id);
+              if (existing && existing.customName) {
+                a.customName = existing.customName;
+                a.name = existing.customName;
+              }
               const outcome = await store.upsert(a);
               if (outcome === 'created') result.created++;
               else result.updated++;

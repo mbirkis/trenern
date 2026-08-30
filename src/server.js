@@ -185,6 +185,23 @@ app.get('/api/activities/:id', async (req, res, next) => {
   }
 });
 
+// Set or clear a user-defined name for an activity. Empty/blank resets to the
+// parser-derived name. The override survives re-ingest.
+app.patch('/api/activities/:id', async (req, res, next) => {
+  try {
+    const a = await store.get(req.params.id);
+    if (!a) return res.status(404).json({ error: 'not found' });
+    const raw =
+      typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    a.customName = raw || null;
+    a.name = a.customName || a.autoName || a.name;
+    await store.upsert(a);
+    res.json(a);
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.delete('/api/activities/:id', async (req, res, next) => {
   try {
     res.json({ removed: await store.remove(req.params.id) });
