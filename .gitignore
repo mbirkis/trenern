@@ -5,6 +5,8 @@ config/*token*.json
 config/keys/
 data/activities/
 data/cache/
+data/imports/
+data/sample/HealthAutoExport*.json
 data/index.json
 data/.migrated-to-db
 data/*.db

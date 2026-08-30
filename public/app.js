@@ -278,14 +278,25 @@ function renderDetail(a) {
   ];
 
   const totalZ = (a.hrZones || []).reduce((s, z) => s + (z.seconds || 0), 0);
-  const zonesHtml = (a.hrZones || []).map((z) => {
-    const pct = totalZ ? (z.seconds / totalZ) * 100 : 0;
-    return `<div class="zone-row">
-      <span class="lbl">Z${z.zone}</span>
-      <div class="zone-bar"><span class="z-${z.zone}" style="width:${pct.toFixed(1)}%"></span></div>
-      <span class="val">${fmtDuration(z.seconds)}</span>
+  let zonesHtml;
+  if (totalZ > 0) {
+    zonesHtml = (a.hrZones || []).map((z) => {
+      const pct = (z.seconds / totalZ) * 100;
+      return `<div class="zone-row">
+        <span class="lbl">Z${z.zone}</span>
+        <div class="zone-bar"><span class="z-${z.zone}" style="width:${pct.toFixed(1)}%"></span></div>
+        <span class="val">${fmtDuration(z.seconds)}${z.seconds ? ` · ${pct.toFixed(0)}%` : ''}</span>
+      </div>`;
+    }).join('');
+  } else if (a.avgHr) {
+    const zn = zoneOf(a.avgHr, a.hrZones);
+    zonesHtml = `<div class="zone-note">
+      Kilden har bare snitt-/makspuls for denne økta – ingen puls-tidsserie,
+      så tid i sone kan ikke beregnes.${zn ? ` Snittpuls ${a.avgHr} bpm ≈ sone Z${zn}.` : ''}
     </div>`;
-  }).join('');
+  } else {
+    zonesHtml = '<div class="detail-empty">Ingen pulsdata</div>';
+  }
 
   const eleSeries = (a.track || []).map((p) => p.ele).filter(Number.isFinite);
   const hrSeries = (a.track || []).map((p) => p.hr).filter(Number.isFinite);
@@ -300,7 +311,7 @@ function renderDetail(a) {
     </div>
 
     <div class="section-title">Pulssoner (${a.hrRest || '?'}–${a.hrMax || '?'} bpm)</div>
-    <div class="zones">${zonesHtml || '<div class="detail-empty">Ingen pulsdata</div>'}</div>
+    <div class="zones">${zonesHtml}</div>
 
     ${eleSeries.length > 3 ? chartBlock('Høydeprofil', eleSeries, 'm', cumDist) : ''}
     ${hrSeries.length > 3 ? chartBlock('Puls', hrSeries, 'bpm', cumDist) : ''}

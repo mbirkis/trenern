@@ -221,6 +221,7 @@ main {
 .z-3 { background: var(--z3); } .z-4 { background: var(--z4); } .z-5 { background: var(--z5); }
 .zone-row .lbl { color: var(--muted); }
 .zone-row .val { text-align: right; color: var(--text); }
+.zone-note { color: var(--muted); font-size: 12px; line-height: 1.5; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 
 .chart { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 10px; }
 .chart .caption { color: var(--muted); font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between; }
