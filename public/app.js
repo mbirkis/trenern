@@ -108,12 +108,8 @@ async function fetchJSON(url, opts) {
 }
 
 async function refresh() {
-  const [acts, stats] = await Promise.all([
-    fetchJSON('/api/activities'),
-    fetchJSON('/api/stats').catch(() => null),
-  ]);
-  activities = acts;
-  renderSummary(stats);
+  activities = await fetchJSON('/api/activities');
+  renderSummary();
   populateTypeFilter();
   renderList();
   await loadRoutes();
@@ -196,14 +192,26 @@ function clearSelection() {
   drawOverview();
 }
 
-function renderSummary(stats) {
+/** Menu-bar summary — current calendar year only. */
+function renderSummary() {
   const el = document.getElementById('summary');
-  if (!stats) { el.textContent = ''; return; }
+  const year = new Date().getFullYear();
+  const mine = activities.filter(
+    (a) => a.start && new Date(a.start).getFullYear() === year
+  );
+  if (!mine.length) {
+    el.innerHTML = `<span class="sum-year">${year}</span><span>ingen økter i år ennå</span>`;
+    return;
+  }
+  const dist = mine.reduce((s, a) => s + (a.distanceM || 0), 0);
+  const move = mine.reduce((s, a) => s + (a.movingTimeSec || 0), 0);
+  const gain = mine.reduce((s, a) => s + (a.elevationGainM || 0), 0);
   el.innerHTML = [
-    `<span><b>${stats.count}</b> økter</span>`,
-    `<span><b>${(stats.totalDistanceM / 1000).toFixed(0)}</b> km totalt</span>`,
-    `<span><b>${fmtDuration(stats.totalMovingTimeSec)}</b> i bevegelse</span>`,
-    `<span><b>${stats.totalElevationGainM}</b> m stigning</span>`,
+    `<span class="sum-year">${year}</span>`,
+    `<span><b>${mine.length}</b> økter</span>`,
+    `<span><b>${(dist / 1000).toFixed(0)}</b> km</span>`,
+    `<span><b>${fmtDuration(move)}</b> i bevegelse</span>`,
+    `<span><b>${Math.round(gain)}</b> m stigning</span>`,
   ].join('');
 }
 

@@ -36,8 +36,15 @@ header {
 .brand h1 { font-size: 16px; margin: 0; letter-spacing: 0.5px; }
 .logo { color: var(--accent); font-size: 18px; }
 
-.summary { display: flex; gap: 20px; color: var(--muted); font-size: 13px; flex: 1; }
+.summary { display: flex; align-items: center; gap: 20px; color: var(--muted); font-size: 13px; flex: 1; }
 .summary b { color: var(--text); font-weight: 600; }
+.summary .sum-year {
+  color: var(--text);
+  font-weight: 700;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
 
 .actions { display: flex; align-items: center; gap: 12px; }
 .ingest-status { color: var(--muted); font-size: 12px; }
@@ -58,6 +65,17 @@ button.ghost {
 }
 button.ghost:hover { background: var(--panel-2); }
 button.danger { background: var(--z5); color: #fff; }
+
+a.ghost {
+  display: inline-block;
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+a.ghost:hover { background: var(--panel-2); }
 
 /* --- sources modal --- */
 .modal-backdrop {
@@ -287,3 +305,69 @@ svg.spark { display: block; width: 100%; height: 90px; }
   main { grid-template-columns: 1fr; grid-template-rows: auto 50vh auto; }
   #sidebar { max-height: 30vh; }
 }
+
+/* --- statistics page --- */
+.stats-main {
+  display: block;
+  overflow-y: auto;
+  padding: 24px 28px 48px;
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+}
+.stats-main h2 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin: 28px 0 10px;
+}
+.stats-main h2:first-child { margin-top: 4px; }
+
+.table-wrap { overflow-x: auto; }
+.stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.stats-table th, .stats-table td {
+  text-align: right;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.stats-table th:first-child, .stats-table td.yr { text-align: left; }
+.stats-table thead th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.stats-table tbody tr:hover { background: var(--panel-2); }
+.stats-table tr.is-current { background: rgba(90, 177, 255, 0.08); }
+.stats-table tr.is-current .yr { color: var(--accent); font-weight: 700; }
+.stats-table tfoot td {
+  font-weight: 700;
+  border-top: 2px solid var(--line);
+  border-bottom: 0;
+}
+.tag-now {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+.bar-chart { display: flex; flex-direction: column; gap: 6px; }
+.bar-row { display: grid; grid-template-columns: 48px 1fr 90px; align-items: center; gap: 10px; font-size: 12px; }
+.bar-label { color: var(--muted); }
+.bar-track { background: var(--panel-2); border-radius: 4px; height: 18px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; background: var(--accent); opacity: 0.55; border-radius: 4px; }
+.bar-row.is-current .bar-fill { opacity: 1; }
+.bar-row.is-current .bar-label { color: var(--accent); font-weight: 700; }
+.bar-value { text-align: right; color: var(--text); }
