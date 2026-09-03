@@ -96,6 +96,34 @@ export function createPostgres() {
       return r.rows.map(rowToSummary);
     },
 
+    async listTracks({ type, from, to } = {}) {
+      const where = ['has_track = true'];
+      const params = [];
+      if (type) {
+        params.push(type);
+        where.push(`type = $${params.length}`);
+      }
+      if (from) {
+        params.push(from);
+        where.push(`start_time >= $${params.length}`);
+      }
+      if (to) {
+        params.push(to);
+        where.push(`start_time <= $${params.length}`);
+      }
+      const sql =
+        `SELECT id, type, name, start_time, data FROM activities` +
+        ` WHERE ${where.join(' AND ')} ORDER BY start_time DESC`;
+      const r = await pool.query(sql, params);
+      return r.rows.map((row) => ({
+        id: row.id,
+        type: row.type,
+        name: row.name,
+        start: row.start_time,
+        track: (rowToActivity(row.data) || {}).track || [],
+      }));
+    },
+
     async upsert(activity) {
       const r = await pool.query(insertSql, rowValues(activity));
       return r.rows[0]?.inserted ? 'created' : 'updated';

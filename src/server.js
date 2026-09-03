@@ -15,7 +15,7 @@ import { runIngest, ingestStatus, startScheduler } from './ingest.js';
 import { hrZoneBounds } from './model.js';
 
 const app = express();
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 /**
  * Resolve the effective map tile layer. Uses the Tracestrack Topo style when a
@@ -156,17 +156,16 @@ app.get('/api/stats/by-year', async (_req, res, next) => {
 });
 
 // Simplified polylines for every activity — used to draw all routes on the map.
+// Fetches all tracks in a single query (no N+1) and downsamples each.
 app.get('/api/routes', async (req, res, next) => {
   try {
     const { type, from, to } = req.query;
-    const summaries = await store.list({ type, from, to });
+    const rows = await store.listTracks({ type, from, to });
     const out = [];
-    for (const s of summaries) {
-      if (!s.hasTrack) continue;
-      const a = await store.get(s.id);
-      const points = simplifyTrack(a && a.track);
+    for (const r of rows) {
+      const points = simplifyTrack(r.track);
       if (points.length >= 2) {
-        out.push({ id: s.id, type: s.type, name: s.name, start: s.start, points });
+        out.push({ id: r.id, type: r.type, name: r.name, start: r.start, points });
       }
     }
     res.json(out);

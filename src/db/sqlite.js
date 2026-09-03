@@ -80,6 +80,33 @@ export function createSqlite() {
       return db.prepare(sql).all(params).map(rowToSummary);
     },
 
+    async listTracks({ type, from, to } = {}) {
+      const where = ['has_track = 1'];
+      const params = {};
+      if (type) {
+        where.push('type = @type');
+        params.type = type;
+      }
+      if (from) {
+        where.push('start_time >= @from');
+        params.from = from;
+      }
+      if (to) {
+        where.push('start_time <= @to');
+        params.to = to;
+      }
+      const sql =
+        `SELECT id, type, name, start_time, data FROM activities` +
+        ` WHERE ${where.join(' AND ')} ORDER BY start_time DESC`;
+      return db.prepare(sql).all(params).map((r) => ({
+        id: r.id,
+        type: r.type,
+        name: r.name,
+        start: r.start_time,
+        track: (rowToActivity(r.data) || {}).track || [],
+      }));
+    },
+
     async upsert(activity) {
       const existed = await this.has(activity.id);
       db.prepare(insertSql).run(activityToRow(activity));

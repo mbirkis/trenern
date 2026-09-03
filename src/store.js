@@ -76,6 +76,11 @@ export async function list(opts) {
   return (await db()).list(opts || {});
 }
 
+/** Fetch id/type/name/start + full track for every activity with a track, in one query. */
+export async function listTracks(opts) {
+  return (await db()).listTracks(opts || {});
+}
+
 export async function get(id) {
   return (await db()).get(id);
 }
