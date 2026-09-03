@@ -291,8 +291,17 @@ main {
 .zone-note { color: var(--muted); font-size: 12px; line-height: 1.5; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
 
 .chart { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin-bottom: 10px; }
-.chart .caption { color: var(--muted); font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+.chart .caption { color: var(--muted); font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 svg.spark { display: block; width: 100%; height: 90px; }
+
+.splits .bar-chart { margin: 6px 0 10px; gap: 4px; }
+.splits .bar-row { grid-template-columns: 34px 1fr 56px; gap: 8px; }
+.splits .bar-track { height: 16px; }
+.splits .bar-fill { opacity: 0.9; }
+.splits .stats-table { font-size: 12px; }
+.splits .stats-table th, .splits .stats-table td { padding: 5px 8px; }
+.split-fast { color: var(--z2); font-weight: 700; }
+.split-slow { color: var(--z4); font-weight: 700; }
 
 .leaflet-container { background: #1a1d24; }
 .map-legend {

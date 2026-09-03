@@ -436,6 +436,7 @@ function renderDetail(a) {
   const eleSeries = (a.track || []).map((p) => p.ele).filter(Number.isFinite);
   const hrSeries = (a.track || []).map((p) => p.hr).filter(Number.isFinite);
   const cumDist = cumulativeDistanceKm(a.track || []);
+  const splits = computeSplits(a.track || []);
 
   el.innerHTML = `
     <button id="back-to-all" class="ghost back-btn">← Alle turer</button>
@@ -450,6 +451,8 @@ function renderDetail(a) {
 
     <div class="section-title">Pulssoner (${a.hrRest || '?'}–${a.hrMax || '?'} bpm)</div>
     <div class="zones">${zonesHtml}</div>
+
+    ${splits.length ? splitsBlock(splits) : ''}
 
     ${eleSeries.length > 3 ? chartBlock('Høydeprofil', eleSeries, 'm', cumDist) : ''}
     ${hrSeries.length > 3 ? chartBlock('Puls', hrSeries, 'bpm', cumDist) : ''}
@@ -496,6 +499,122 @@ function cumulativeDistanceKm(track) {
     d += 2 * R * Math.asin(Math.sqrt(s));
   }
   return d / 1000;
+}
+
+function distMeters(a, b) {
+  const R = 6371000, rad = (x) => x * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+/**
+ * Split a GPS track into fixed-distance segments (default 1 km) and return the
+ * time / pace / avg HR for each. Boundary times are linearly interpolated so a
+ * split is exactly `intervalM` metres regardless of sample spacing. The final
+ * segment may be a partial kilometre.
+ */
+function computeSplits(track, intervalM = 1000) {
+  const pts = (track || []).filter(
+    (p) => Number.isFinite(p.lat) && Number.isFinite(p.lon) && Number.isFinite(p.t)
+  );
+  if (pts.length < 2) return [];
+
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cum[i] = cum[i - 1] + distMeters(pts[i - 1], pts[i]);
+  }
+  const total = cum[cum.length - 1];
+  if (total < 200) return [];
+
+  const timeAtDist = (d) => {
+    if (d <= 0) return pts[0].t;
+    for (let i = 1; i < pts.length; i++) {
+      if (cum[i] >= d) {
+        const seg = cum[i] - cum[i - 1] || 1;
+        const frac = (d - cum[i - 1]) / seg;
+        return pts[i - 1].t + (pts[i].t - pts[i - 1].t) * frac;
+      }
+    }
+    return pts[pts.length - 1].t;
+  };
+
+  const splits = [];
+  const n = Math.max(1, Math.ceil(total / intervalM));
+  for (let k = 0; k < n; k++) {
+    const dStart = k * intervalM;
+    const dEnd = Math.min((k + 1) * intervalM, total);
+    const dist = dEnd - dStart;
+    const timeSec = timeAtDist(dEnd) - timeAtDist(dStart);
+    if (!(timeSec > 0) || dist < 100) continue;   // drop trailing GPS crumbs
+    let hrSum = 0, hrN = 0;
+    for (let i = 0; i < pts.length; i++) {
+      if (cum[i] >= dStart && cum[i] <= dEnd && Number.isFinite(pts[i].hr)) {
+        hrSum += pts[i].hr;
+        hrN++;
+      }
+    }
+    splits.push({
+      index: k + 1,
+      distanceM: dist,
+      timeSec,
+      paceSecPerKm: timeSec / (dist / 1000),
+      avgHr: hrN ? Math.round(hrSum / hrN) : null,
+      partial: dist < intervalM - 1,
+    });
+  }
+  return splits;
+}
+
+function splitsBlock(splits) {
+  const paces = splits.map((s) => s.paceSecPerKm);
+  const min = Math.min(...paces), max = Math.max(...paces);
+  const span = max - min || 1;
+  const hasHr = splits.some((s) => s.avgHr != null);
+
+  const bars = splits.map((s) => {
+    const norm = (s.paceSecPerKm - min) / span;   // 0 = raskest, 1 = tregest
+    const w = 12 + 88 * norm;
+    const hue = 140 - 140 * norm;                  // grønn → rød
+    const tag = s.paceSecPerKm === min ? ' split-fast'
+      : s.paceSecPerKm === max ? ' split-slow' : '';
+    const label = s.partial ? (s.distanceM / 1000).toFixed(2) : String(s.index);
+    return `<div class="bar-row">
+      <span class="bar-label${tag}">${label}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${w.toFixed(1)}%;background:hsl(${hue.toFixed(0)} 62% 52%)"></span></span>
+      <span class="bar-value">${fmtPace(s.paceSecPerKm)}</span>
+    </div>`;
+  }).join('');
+
+  const rows = splits.map((s) => {
+    const label = s.partial
+      ? `${(s.distanceM / 1000).toFixed(2)} km`
+      : `Km ${s.index}`;
+    const tag = s.paceSecPerKm === min ? ' split-fast'
+      : s.paceSecPerKm === max ? ' split-slow' : '';
+    return `<tr>
+      <td class="yr${tag}">${label}</td>
+      <td>${fmtDuration(s.timeSec)}</td>
+      <td>${fmtPace(s.paceSecPerKm)}</td>
+      ${hasHr ? `<td>${s.avgHr != null ? s.avgHr : '–'}</td>` : ''}
+    </tr>`;
+  }).join('');
+
+  return `<div class="section-title">Delt tid – tempo per km</div>
+  <div class="chart splits">
+    <div class="caption">
+      <span>Tempo /km · stolpelengde = relativ treghet</span>
+      <span>raskest ${fmtPace(min)} · tregest ${fmtPace(max)}</span>
+    </div>
+    <div class="bar-chart">${bars}</div>
+    <div class="table-wrap">
+      <table class="stats-table">
+        <thead><tr><th>Split</th><th>Tid</th><th>Tempo</th>${hasHr ? '<th>Puls</th>' : ''}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 async function sync() {
