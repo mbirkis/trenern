@@ -40,6 +40,22 @@ const MAP_PROVIDERS = {
     attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
     maxZoom: 20,
   },
+  // Vektorkart: MapLibre GL rendrer OpenTopoMap-stilen i nettleseren, med
+  // høydekurver regnet ut lokalt fra terrengdata. Krever WebGL.
+  opentopomap: {
+    label: 'OpenTopoMap – vektor (høydekurver)',
+    gl: true,
+    maxZoom: 20,
+  },
+  'opentopomap-raster': {
+    label: 'OpenTopoMap – raster',
+    url: 'https://tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution:
+      'Kartstil: &copy; <a href="https://opentopomap.org/">OpenTopoMap</a> ' +
+      '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>), ' +
+      'data &copy; OpenStreetMap-bidragsytere',
+    maxZoom: 17,
+  },
 };
 const MAP_PROVIDER_KEY = 'trenern.mapProvider';
 
@@ -95,6 +111,7 @@ function initMobileNav() {
 }
 
 let map, tileLayer, routeLayer, markerLayer, overviewLayer;
+let activeProvider = null;
 let legendCtl;
 let activities = [];
 let routes = [];          // [{id,type,name,start,points:[[lat,lon]...]}]
@@ -110,6 +127,11 @@ async function init() {
   markerLayer = L.layerGroup().addTo(map);
   setTimeout(() => map.invalidateSize(), 0);
   window.addEventListener('resize', () => map.invalidateSize());
+  // Vektorlaget måler seg selv i en animasjonsramme, som ikke kjører når
+  // kartet er skjult (mobilfanen står på listen). Sett størrelsen med én
+  // gang i stedet, ellers blir GL-lerretet hengende igjen i standard-
+  // størrelsen når man bytter til kartfanen.
+  map.on('resize', resizeGlLayer);
 
   document.getElementById('sync-btn').addEventListener('click', sync);
   initMobileNav();
@@ -119,15 +141,168 @@ async function init() {
   try {
     appConfig = await fetchJSON('/api/config');
   } catch (_) { /* non-fatal */ }
-  applyTileLayer();
+  await applyTileLayer();
   addLegend();
 
   await refresh();
   pollIngest();
 }
 
-function applyTileLayer() {
-  const p = MAP_PROVIDERS[getMapProvider()] || MAP_PROVIDERS.standard;
+/* ------------------------------------------------------------------
+   Vektorkart (OpenTopoMap)
+
+   MapLibre GL og OpenTopoMap-stilen lastes først når brukeren faktisk
+   velger vektorkartet – biblioteket er ~1 MB, og de fleste bakgrunns-
+   kartene er vanlige rasterfliser. Selve GL-lerretet legges inn som et
+   Leaflet-lag (maplibre-gl-leaflet), slik at ruter og markører tegnes
+   av Leaflet som før.
+------------------------------------------------------------------ */
+const OTM_VECTOR_TILES = 'https://opentopomap.org/otm/{z}/{x}/{y}.pbf';
+const OTM_SPRITE = 'https://opentopomap.org/vector/otm_sprite';
+const OTM_GLYPHS = 'https://fonts.undpgeohub.org/fonts/{fontstack}/{range}.pbf';
+const OTM_DEM_TILES = 'https://tiles.mapterhorn.com/{z}/{x}/{y}.webp';
+
+let maplibreReady = null;
+
+function loadAsset(tag, attrs) {
+  return new Promise((resolve, reject) => {
+    const el = Object.assign(document.createElement(tag), attrs);
+    el.onload = () => resolve();
+    el.onerror = () => reject(new Error(`kunne ikke laste ${attrs.src || attrs.href}`));
+    document.head.appendChild(el);
+  });
+}
+
+/** Last MapLibre GL + Leaflet-brua + OpenTopoMap-stilen (én gang). */
+function ensureMapLibre() {
+  if (!maplibreReady) {
+    maplibreReady = (async () => {
+      await loadAsset('link', { rel: 'stylesheet', href: '/vendor/maplibre/maplibre-gl.css' });
+      await loadAsset('script', { src: '/vendor/maplibre/maplibre-gl.js' });
+      await Promise.all([
+        loadAsset('script', { src: '/vendor/maplibre/leaflet-maplibre-gl.js' }),
+        loadAsset('script', { src: '/vendor/maplibre/maplibre-contour.js' }),
+        loadAsset('script', { src: '/vendor/maplibre/otm-layers.js' }),
+      ]);
+    })().catch((err) => {
+      maplibreReady = null;   // la neste forsøk prøve på nytt
+      throw err;
+    });
+  }
+  return maplibreReady;
+}
+
+/** Bygg MapLibre-stilen for OpenTopoMap slik opentopomap.org/vector gjør. */
+function otmVectorStyle() {
+  const dem = new mlcontour.DemSource({
+    url: OTM_DEM_TILES,
+    encoding: 'terrarium',
+    maxzoom: 15,
+    worker: true,
+    cacheSize: 100,
+    timeoutMs: 10000,
+  });
+  dem.setupMaplibre(maplibregl);
+  return {
+    version: 8,
+    glyphs: OTM_GLYPHS,
+    sprite: OTM_SPRITE,
+    sources: {
+      'opentopomap-vector': {
+        type: 'vector',
+        lineMetrics: true,
+        tiles: [OTM_VECTOR_TILES],
+        maxzoom: 14,
+        attribution:
+          'Kartstil: &copy; <a href="https://opentopomap.org/">OpenTopoMap</a> ' +
+          '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>), ' +
+          'data &copy; OpenStreetMap-bidragsytere',
+      },
+      dem: {
+        type: 'raster-dem',
+        encoding: 'terrarium',
+        tiles: [dem.sharedDemProtocolUrl],
+        maxzoom: 15,
+        tileSize: 512,
+        attribution: 'Terreng: &copy; <a href="https://mapterhorn.com/">mapterhorn</a>',
+      },
+      'contour-source': {
+        type: 'vector',
+        tiles: [
+          dem.contourProtocolUrl({
+            multiplier: 1,
+            thresholds: {     // zoomnivå: [mindre kurve, hovedkurve] i meter
+              10: [50, 1000], 11: [20, 500], 12: [10, 100],
+              13: [10, 100], 14: [10, 100], 15: [10, 50],
+            },
+            contourLayer: 'contours',
+            elevationKey: 'ele',
+            levelKey: 'level',
+            extent: 4096,
+            buffer: 1,
+          }),
+        ],
+        maxzoom: 15,
+      },
+    },
+    // Stilen fra opentopomap.org har et skjult rasterlag på toppen; det
+    // trenger vi ikke her (rasterversjonen er sitt eget kartvalg).
+    layers: window.OTM_LAYERS.filter((l) => l.source !== 'opentopomap-raster'),
+  };
+}
+
+/** Gi GL-lerretet samme størrelse som Leaflet-kartet (+ overtegning). */
+function resizeGlLayer() {
+  if (!tileLayer || !tileLayer.getMaplibreMap) return;
+  const size = tileLayer.getSize();
+  const el = tileLayer.getContainer();
+  el.style.width = `${size.x}px`;
+  el.style.height = `${size.y}px`;
+  tileLayer.getMaplibreMap().resize();
+}
+
+/** Fjern gjeldende bakgrunnskart. */
+function removeBaseLayer() {
+  if (!tileLayer) return;
+  // maplibre-gl-leaflet melder inn attribusjonen sin manuelt, i tillegg til
+  // Leaflets eget oppslag, så den blir ikke ryddet bort av seg selv.
+  if (tileLayer.getMaplibreMap && map.attributionControl) {
+    map.attributionControl.removeAttribution(tileLayer.getAttribution());
+  }
+  map.removeLayer(tileLayer);
+  tileLayer = null;
+}
+
+async function applyTileLayer() {
+  const id = getMapProvider();
+  const p = MAP_PROVIDERS[id] || MAP_PROVIDERS.standard;
+  activeProvider = id;
+
+  if (p.gl) {
+    try {
+      await ensureMapLibre();
+    } catch (err) {
+      console.warn('MapLibre kunne ikke lastes, faller tilbake til raster', err);
+      setMapProvider('opentopomap-raster');
+      const sel = document.getElementById('map-provider');
+      if (sel) sel.value = 'opentopomap-raster';
+      return applyTileLayer();
+    }
+    if (activeProvider !== id) return;   // brukeren rakk å bytte igjen
+    removeBaseLayer();
+    map.setMaxZoom(p.maxZoom || 19);
+    tileLayer = L.maplibreGL({ style: otmVectorStyle() }).addTo(map);
+    // maplibre-gl-leaflet setter transformen direkte uten å be om ny
+    // opptegning, så MapLibre tegner ikke alltid det første bildet når
+    // laget legges til på et kart som allerede har et utsnitt. Be om en
+    // opptegning hver gang nye data (stil, sprite, fliser) lander.
+    const gl = tileLayer.getMaplibreMap();
+    gl.on('data', () => gl.triggerRepaint());
+    // Kartet kan ha fått sin endelige størrelse før laget ble lagt til.
+    setTimeout(() => { map.invalidateSize(); resizeGlLayer(); }, 0);
+    return;
+  }
+
   let url, attribution, maxZoom;
   if (p.server) {
     const m = (appConfig && appConfig.map) || {};
@@ -139,7 +314,8 @@ function applyTileLayer() {
     attribution = p.attribution;
     maxZoom = p.maxZoom || 19;
   }
-  if (tileLayer) map.removeLayer(tileLayer);
+  removeBaseLayer();
+  map.setMaxZoom(maxZoom);
   tileLayer = L.tileLayer(url, { maxZoom, attribution }).addTo(map);
 }
 
