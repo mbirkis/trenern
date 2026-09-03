@@ -1,13 +1,13 @@
 'use strict';
 
-const ZONE_COLORS = ['#6b7a8f', '#3fb950', '#d6b52c', '#e8873b', '#e5484d'];
+const ZONE_COLORS = ['#8f8f8f', '#45a557', '#f5a623', '#f76b15', '#e5484d'];
 const TYPE_LABELS = {
   running: 'Løping', trailrunning: 'Terrengløp', hiking: 'Fjelltur',
   walking: 'Gåtur', cycling: 'Sykkel', skiing: 'Ski', other: 'Annet',
 };
 const TYPE_COLORS = {
-  running: '#5ab1ff', trailrunning: '#a06bff', hiking: '#3fb950',
-  walking: '#d6b52c', cycling: '#e8873b', skiing: '#4dd0e1', other: '#9aa3b2',
+  running: '#0072f5', trailrunning: '#8e4ec6', hiking: '#45a557',
+  walking: '#f5a623', cycling: '#f76b15', skiing: '#00b8cc', other: '#8f8f8f',
 };
 const DEFAULT_VIEW = [61.5, 8.5];
 
@@ -55,6 +55,45 @@ function setMapProvider(id) {
   try { localStorage.setItem(MAP_PROVIDER_KEY, id); } catch (_) { /* ignore */ }
 }
 
+/* ------------------------------------------------------------------
+   Mobil: kart, liste og detaljer deler samme flate og byttes via
+   fanelinja nederst. På desktop vises alle tre side ved side.
+------------------------------------------------------------------ */
+const MOBILE_Q = window.matchMedia('(max-width: 900px)');
+const isMobile = () => MOBILE_Q.matches;
+
+// Siste utsnitt kartet ble tilpasset til. Brukes for å re-tilpasse når
+// kartet var skjult (mobil) mens ruta ble tegnet.
+let lastBounds = null;
+
+/** Tilpass kartet til et utsnitt og husk det. */
+function fitMap(bounds) {
+  lastBounds = bounds;
+  map.fitBounds(bounds);
+}
+
+/** Vis én av panelene ('list' | 'map' | 'detail') på mobil. */
+function setMobileView(view) {
+  document.body.dataset.view = view;
+  document.querySelectorAll('#mobile-nav button').forEach((b) => {
+    b.setAttribute('aria-selected', String(b.dataset.view === view));
+  });
+  if (view === 'map' && map) {
+    setTimeout(() => {
+      map.invalidateSize();
+      if (lastBounds) map.fitBounds(lastBounds);
+    }, 0);
+  }
+}
+
+function initMobileNav() {
+  document.querySelectorAll('#mobile-nav button').forEach((b) => {
+    b.addEventListener('click', () => setMobileView(b.dataset.view));
+  });
+  setMobileView('list');
+  MOBILE_Q.addEventListener('change', () => setTimeout(() => map.invalidateSize(), 0));
+}
+
 let map, tileLayer, routeLayer, markerLayer, overviewLayer;
 let legendCtl;
 let activities = [];
@@ -73,6 +112,7 @@ async function init() {
   window.addEventListener('resize', () => map.invalidateSize());
 
   document.getElementById('sync-btn').addEventListener('click', sync);
+  initMobileNav();
   document.getElementById('type-filter').addEventListener('change', onFilterChange);
   initSettingsModal();
 
@@ -116,7 +156,7 @@ async function refresh() {
   renderList();
   await loadRoutes();
   if (selectedId && activities.some((a) => a.id === selectedId)) {
-    selectActivity(selectedId);
+    selectActivity(selectedId, { focus: false });
   } else {
     clearSelection();
   }
@@ -183,12 +223,13 @@ function drawOverview() {
     line.addTo(overviewLayer);
     all.push(...r.points);
   }
-  if (all.length) map.fitBounds(L.latLngBounds(all).pad(0.08));
+  if (all.length) fitMap(L.latLngBounds(all).pad(0.08));
   else map.setView(DEFAULT_VIEW, 5);
 }
 
 function clearSelection() {
   selectedId = null;
+  if (isMobile()) setMobileView('list');
   renderList();
   renderDetail(null);
   drawOverview();
@@ -271,6 +312,7 @@ function renderList() {
 
 /** Fit the map to a single activity's route without opening its detail view. */
 async function zoomToActivity(id) {
+  if (isMobile()) setMobileView('map');
   let pts = [];
   const r = routes.find((x) => x.id === id);
   if (r && r.points && r.points.length >= 2) {
@@ -285,7 +327,7 @@ async function zoomToActivity(id) {
   }
   if (pts.length >= 2) {
     map.invalidateSize();
-    map.fitBounds(L.latLngBounds(pts).pad(0.1));
+    fitMap(L.latLngBounds(pts).pad(0.1));
   }
 }
 
@@ -324,7 +366,7 @@ async function deleteActivity(id) {
   await refresh();
 }
 
-async function selectActivity(id) {
+async function selectActivity(id, { focus = true } = {}) {
   selectedId = id;
   renderList();
   let a;
@@ -336,6 +378,7 @@ async function selectActivity(id) {
   }
   drawRoute(a);
   renderDetail(a);
+  if (focus && isMobile()) setMobileView('detail');
 }
 
 function drawRoute(a) {
@@ -356,7 +399,7 @@ function drawRoute(a) {
   const flush = (z) => {
     if (seg.length < 2) return;
     L.polyline(seg, {
-      color: z ? ZONE_COLORS[z - 1] : '#5ab1ff',
+      color: z ? ZONE_COLORS[z - 1] : '#0072f5',
       weight: 4,
       opacity: 0.9,
     }).addTo(routeLayer);
@@ -378,7 +421,7 @@ function drawRoute(a) {
   L.circleMarker([end.lat, end.lon], { radius: 6, color: '#e5484d', fillOpacity: 1 })
     .bindTooltip('Slutt').addTo(markerLayer);
 
-  map.fitBounds(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1));
+  fitMap(L.latLngBounds(pts.map((p) => [p.lat, p.lon])).pad(0.1));
 }
 
 function zoneOf(hr, bounds) {
@@ -457,6 +500,7 @@ function renderDetail(a) {
     ${eleSeries.length > 3 ? chartBlock('Høydeprofil', eleSeries, 'm', cumDist) : ''}
     ${hrSeries.length > 3 ? chartBlock('Puls', hrSeries, 'bpm', cumDist) : ''}
   `;
+  el.scrollTop = 0;
   const back = document.getElementById('back-to-all');
   if (back) back.addEventListener('click', clearSelection);
   const rn = document.getElementById('rename-act');
@@ -640,7 +684,7 @@ async function sync() {
 async function pollIngest() {
   try {
     const s = await fetchJSON('/api/ingest/status');
-    if (s.running) setIngestStatus('ingest kjører …');
+    if (s.running) setIngestStatus('ingest kjører …', true);
     else if (s.lastResult) {
       const r = s.lastResult;
       setIngestStatus(`sist synk ${fmtDateTime(r.finishedAt)} · +${r.created} nye`);
@@ -649,8 +693,11 @@ async function pollIngest() {
   setTimeout(pollIngest, 15000);
 }
 
-function setIngestStatus(txt) {
-  document.getElementById('ingest-status').textContent = txt;
+/** `busy` markerer pågående synk – da vises status også på små skjermer. */
+function setIngestStatus(txt, busy = false) {
+  const el = document.getElementById('ingest-status');
+  el.textContent = txt;
+  el.classList.toggle('is-busy', busy);
 }
 
 function addLegend() {
