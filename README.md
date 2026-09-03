@@ -65,12 +65,15 @@ miljøvariabelen `TRACESTRACK_KEY`. Uten nøkkel faller kartet tilbake til vanli
 OpenStreetMap-tiles.
 
 Under **Innstillinger → Bakgrunnskart** kan du bytte kartstil i nettleseren
-(valget lagres lokalt): standardkartet, OpenStreetMap, Kartverkets Norgeskart
-(topografisk og gråtone) og OpenTopoMap — både som vanlige rasterfliser og som
-**vektorkart**. Vektorvarianten tegner OpenTopoMap-stilen med MapLibre GL
-(`public/vendor/maplibre/`, lastes først når kartet velges) og regner ut
-høydekurver lokalt fra terrengdata, slik <https://opentopomap.org/vector/> gjør.
-Den krever WebGL, og faller tilbake til rasterkartet om biblioteket ikke lastes.
+(valget lagres lokalt): OpenTopoMap som vektorkart eller rasterfliser,
+Kartverkets Norgeskart (topografisk og gråtone), serverens egen kartstil
+(Tracestrack Topo, se over) og OpenStreetMap.
+
+**OpenTopoMap – vektor** er standardvalget. Det tegner OpenTopoMap-stilen med
+MapLibre GL (`public/vendor/maplibre/`, lastes først når kartet vises) og regner
+ut høydekurver lokalt fra terrengdata, slik <https://opentopomap.org/vector/>
+gjør. Det krever WebGL, og faller tilbake til OpenTopoMap-rasterflisene om
+biblioteket ikke lar seg laste.
 
 Alle turer tegnes på kartet samtidig (farget etter turtype). Velger du én tur —
 i listen eller ved å klikke ruta — skjules de andre, og ruta farges etter

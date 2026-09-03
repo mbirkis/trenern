@@ -19,28 +19,11 @@ const ICON_TRASH =
   '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 4h11"/><path d="M6 4V2.5h4V4"/><path d="M4 4l.7 9.5h6.6L12 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></g></svg>';
 
 // Selectable background map services. `server: true` means "use whatever the
-// backend resolved in /api/config" (Tracestrack Topo or OSM fallback).
+// backend resolved in /api/config" (Tracestrack Topo or OSM fallback), and
+// `gl: true` means the style is rendered from vector tiles by MapLibre GL.
+// Rekkefølgen her er rekkefølgen i nedtrekkslista.
 const MAP_PROVIDERS = {
-  standard: { label: 'Standard (topografisk)', server: true },
-  osm: {
-    label: 'OpenStreetMap',
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; OpenStreetMap-bidragsytere',
-    maxZoom: 19,
-  },
-  norgeskart: {
-    label: 'Norgeskart – topografisk (Kartverket)',
-    url: 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
-    attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
-    maxZoom: 20,
-  },
-  'norgeskart-graatone': {
-    label: 'Norgeskart – gråtone (Kartverket)',
-    url: 'https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png',
-    attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
-    maxZoom: 20,
-  },
-  // Vektorkart: MapLibre GL rendrer OpenTopoMap-stilen i nettleseren, med
+  // Standardvalget: MapLibre GL rendrer OpenTopoMap-stilen i nettleseren, med
   // høydekurver regnet ut lokalt fra terrengdata. Krever WebGL.
   opentopomap: {
     label: 'OpenTopoMap – vektor (høydekurver)',
@@ -56,7 +39,27 @@ const MAP_PROVIDERS = {
       'data &copy; OpenStreetMap-bidragsytere',
     maxZoom: 17,
   },
+  norgeskart: {
+    label: 'Norgeskart – topografisk (Kartverket)',
+    url: 'https://cache.kartverket.no/v1/wmts/1.0.0/topo/default/webmercator/{z}/{y}/{x}.png',
+    attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
+    maxZoom: 20,
+  },
+  'norgeskart-graatone': {
+    label: 'Norgeskart – gråtone (Kartverket)',
+    url: 'https://cache.kartverket.no/v1/wmts/1.0.0/topograatone/default/webmercator/{z}/{y}/{x}.png',
+    attribution: '&copy; <a href="https://www.kartverket.no/">Kartverket</a>',
+    maxZoom: 20,
+  },
+  standard: { label: 'Serverens kartstil (Tracestrack Topo)', server: true },
+  osm: {
+    label: 'OpenStreetMap',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; OpenStreetMap-bidragsytere',
+    maxZoom: 19,
+  },
 };
+const DEFAULT_MAP_PROVIDER = 'opentopomap';
 const MAP_PROVIDER_KEY = 'trenern.mapProvider';
 
 function getMapProvider() {
@@ -64,7 +67,7 @@ function getMapProvider() {
     const v = localStorage.getItem(MAP_PROVIDER_KEY);
     if (v && MAP_PROVIDERS[v]) return v;
   } catch (_) { /* localStorage unavailable */ }
-  return 'standard';
+  return DEFAULT_MAP_PROVIDER;
 }
 
 function setMapProvider(id) {
@@ -275,7 +278,7 @@ function removeBaseLayer() {
 
 async function applyTileLayer() {
   const id = getMapProvider();
-  const p = MAP_PROVIDERS[id] || MAP_PROVIDERS.standard;
+  const p = MAP_PROVIDERS[id] || MAP_PROVIDERS[DEFAULT_MAP_PROVIDER];
   activeProvider = id;
 
   if (p.gl) {
