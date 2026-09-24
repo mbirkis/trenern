@@ -17,6 +17,13 @@ function loadFixture(name) {
 }
 
 describe('GarminConnectSource', () => {
+  it('runs the bundled Python module without mocking its executor', async () => {
+    const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
+    const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
+    const help = await src._execPython(['--help']);
+    assert.match(help, /garmin_client|Garmin Connect/i);
+  });
+
   describe('listFiles', () => {
     it('returns a list of file-like entries with ref, name, modifiedTime, size', async () => {
       const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');

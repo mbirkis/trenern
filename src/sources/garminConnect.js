@@ -23,7 +23,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 
 /** Resolve the Python runner path. Tries .venv first, then system python3. */
 function resolvePython() {
