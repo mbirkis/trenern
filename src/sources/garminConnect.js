@@ -47,7 +47,7 @@ export function createGarminConnectSource(cfg) {
       execFile(
         pythonPath,
         [...pythonArgsBase, ...args],
-        { env, timeout: 30000 },
+        { env, timeout: 90000, maxBuffer: 32 * 1024 * 1024 },
         (err, stdout, stderr) => {
           if (err) {
             const msg = stderr?.trim() || err.message;
@@ -79,19 +79,23 @@ export function createGarminConnectSource(cfg) {
      * Each entry uses the Garmin activity ID as `ref` (stable across syncs).
      */
     async listFiles() {
-      const stdout = await this._execPython([
-        ...tokenArg(),
-        'list-activities',
-        '--start', '0',
-        '--limit', '100',
-      ]);
-      const activities = JSON.parse(stdout);
+      const pageSize = 100;
+      const activities = [];
+      for (let start = 0; ; start += pageSize) {
+        const stdout = await this._execPython([
+          ...tokenArg(), 'list-activities', '--start', String(start), '--limit', String(pageSize),
+        ]);
+        const page = JSON.parse(stdout);
+        if (!Array.isArray(page)) throw new Error('Garmin returnerte ikke en aktivitetsliste');
+        activities.push(...page);
+        if (page.length < pageSize) break;
+      }
 
       return activities.map((a) => ({
         ref: String(a.activityId),
         name: a.activityName || a.activityType?.typeKey || `Garmin-${a.activityId}`,
-        modifiedTime: a.startTime || new Date(a.beginTimestamp).toISOString(),
-        size: a.distance || 0,
+        modifiedTime: a.startTimeGMT || a.startTimeLocal || a.startTime || String(a.beginTimestamp || ''),
+        size: a.distance ?? 0,
         // Store extra metadata for the parser to use without re-fetching
         _garminType: a.activityType?.typeKey || 'unknown',
         _hasPolyline: a.hasPolyline !== false,

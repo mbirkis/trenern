@@ -27,51 +27,32 @@ def main():
     )
     parser.add_argument(
         "command",
-        choices=["list-activities", "get-activity", "login", "login-mfa", "status"],
+        choices=["list-activities", "get-activity", "login", "status"],
     )
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--activity-id", type=str, default=None)
-    parser.add_argument("--email", type=str, default=None)
-    parser.add_argument("--token", type=str, default=None)
-    parser.add_argument("--code", type=str, default=None)
+    parser.add_argument("--token", type=str, required=True)
 
     args = parser.parse_args()
 
-    # -- commands that don't need token ----------------------------------------
     if args.command == "login":
-        if not args.email:
-            msg = json.dumps({"ok": False, "error": "--email is required for login"})
-            print(msg, file=sys.stderr)
-            sys.exit(1)
-        token_dir = os.path.abspath(args.token) if args.token else _default_token_dir(args.email)
+        if not sys.stdin.isatty():
+            parser.error("login requires an interactive terminal")
+        email = input("Garmin email: ").strip()
+        if not email:
+            parser.error("Garmin email is required")
+        token_dir = os.path.abspath(args.token)
         client = create_real_client(token_dir, "login")
         try:
-            client.login(args.email)
+            client.login(email)
         except Exception as e:
             print(json.dumps({"ok": False, "error": str(e)}), file=sys.stderr)
             sys.exit(1)
         print(json.dumps({"ok": True, "token_dir": token_dir}), file=sys.stdout)
-        sys.exit(0)
+        return
 
-    if args.command == "login-mfa":
-        # MFA is handled interactively within login(). This command exists for
-        # auth-garmin.mjs compatibility.
-        print(
-            json.dumps({"ok": True, "note": "MFA handled interactively in login step"}),
-            file=sys.stdout,
-        )
-        sys.exit(0)
-
-    # -- commands that require a token -----------------------------------------
-    if not args.token:
-        msg = json.dumps({
-            "ok": False,
-            "error": "--token is required. Authenticate first via:\n"
-                     "  python3 -m garmin_client login --email you@example.com",
-        })
-        print(msg, file=sys.stderr)
-        sys.exit(1)
+    # All data operations require a saved token directory.
 
     token_dir = os.path.abspath(args.token)
     source_id = os.path.basename(token_dir)
@@ -106,12 +87,6 @@ def main():
     else:
         print(json.dumps({"error": f"Command '{args.command}' not implemented"}), file=sys.stderr)
         sys.exit(1)
-
-
-def _default_token_dir(email):
-    """Derive a default token directory from email (fallback when --token omitted)."""
-    safe = email.split("@")[0] if "@" in email else email
-    return os.path.join(os.path.expanduser("~"), ".config", "trenern", "keys", f"garmin-{safe}")
 
 
 if __name__ == "__main__":

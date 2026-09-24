@@ -70,6 +70,7 @@
               <select name="type">
                 <option value="googleDrive">Google Drive</option>
                 <option value="localFolder">Lokal mappe</option>
+                <option value="garminConnect">Garmin Connect</option>
               </select>
             </label>
 
@@ -122,6 +123,9 @@
               <label>Mappesti
                 <input name="path" placeholder="./data/sample eller /absolutt/sti" />
               </label>
+            </div>
+            <div data-when="garminConnect">
+              <p class="hint">Opprett kilden her, og autentiser deretter fra en interaktiv terminal i containeren med <code>node scripts/auth-garmin.mjs --source-id KILDE-ID</code>. Passord og 2FA skal ikke legges inn i nettleseren.</p>
             </div>
 
             <label class="row">

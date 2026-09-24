@@ -1067,7 +1067,9 @@ async function renderSourceList() {
   ul.innerHTML = sources.map((s) => {
     const detail = s.type === 'googleDrive'
       ? `Drive-mappe ${s.folderId || '(mangler ID)'} · ${s.authMethod === 'apiKey' ? 'API-nøkkel' : 'service-konto'}${s.serviceAccountEmail ? ' · ' + escapeHtml(s.serviceAccountEmail) : ''}`
-      : `Mappe ${escapeHtml(s.path || '')}`;
+      : s.type === 'garminConnect'
+        ? `Garmin Connect · ${s.hasToken ? 'token lagret' : 'ikke autentisert'}`
+        : `Mappe ${escapeHtml(s.path || '')}`;
     return `<li class="src-item" data-id="${s.id}">
       <div class="top">
         <span class="name">${escapeHtml(s.label || s.id)}</span>

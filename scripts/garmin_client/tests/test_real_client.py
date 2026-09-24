@@ -175,7 +175,7 @@ class TestRealClientResume:
             with patch("garmin_client.real_client.GarminConnect") as MockGarmin:
                 mock_instance = MagicMock()
                 MockGarmin.return_value = mock_instance
-                mock_instance.login.return_value = (None, None)
+                mock_instance.login.side_effect = persist_tokens
 
                 result = client.resume()
                 assert result is True
@@ -346,18 +346,26 @@ class TestRealClientGetActivityJson:
             assert result["averageGrade"] == 0.5
 
 
+def persist_tokens(*, tokenstore):
+    directory = Path(tokenstore)
+    directory.mkdir(parents=True, exist_ok=True)
+    for name in ('oauth1_token.json', 'oauth2_token.json'):
+        (directory / name).write_text('{}')
+    return None, None
+
+
 class TestRealClientLogin:
     """RealGarminClient.login handles interactive auth securely."""
 
-    def test_login_creates_garmin_and_calls_login(self):
-        client = create_real_client("/tmp/keys", "test-garmin")
+    def test_login_creates_garmin_and_calls_login(self, tmp_path):
+        client = create_real_client(str(tmp_path / 'garmin'), "test-garmin")
         with (
             patch("garmin_client.real_client.GarminConnect") as MockGarmin,
             patch("garmin_client.real_client.getpass", return_value="secret"),
         ):
             mock_instance = MagicMock()
             MockGarmin.return_value = mock_instance
-            mock_instance.login.return_value = (None, None)
+            mock_instance.login.side_effect = persist_tokens
 
             result = client.login("test@example.com")
             assert result is True
@@ -374,9 +382,9 @@ class TestRealClientLogin:
                 tokenstore=str(client._token_dir)
             )
 
-    def test_login_with_mfa_prompts_for_code(self):
-        """MFA callback is called when garminconnect returns MFA needed."""
-        client = create_real_client("/tmp/keys", "test-garmin")
+    def test_login_with_mfa_prompts_for_code(self, tmp_path):
+        """MFA callback is forwarded to the Garmin client."""
+        client = create_real_client(str(tmp_path / 'garmin'), "test-garmin")
         mfa_code = None
 
         def mfa_callback():
@@ -388,7 +396,7 @@ class TestRealClientLogin:
         ):
             mock_instance = MagicMock()
             MockGarmin.return_value = mock_instance
-            mock_instance.login.return_value = (None, None)
+            mock_instance.login.side_effect = persist_tokens
 
             result = client.login("test@example.com", mfa_callback=mfa_callback)
             assert result is True
@@ -403,10 +411,17 @@ class TestRealClientLogin:
             ):
                 mock_instance = MagicMock()
                 MockGarmin.return_value = mock_instance
-                mock_instance.login.return_value = (None, None)
+                mock_instance.login.side_effect = persist_tokens
 
                 result = client.login("test@example.com")
                 assert result is True
+    def test_login_fails_when_garmin_did_not_persist_tokens(self, tmp_path):
+        client = create_real_client(str(tmp_path / 'garmin'), 'test-garmin')
+        with (patch('garmin_client.real_client.GarminConnect') as MockGarmin,
+              patch('garmin_client.real_client.getpass', return_value='secret')):
+            MockGarmin.return_value.login.return_value = (None, None)
+            with pytest.raises(RuntimeError, match='token'):
+                client.login('test@example.com')
 
 
 class TestRealClientStableIds:

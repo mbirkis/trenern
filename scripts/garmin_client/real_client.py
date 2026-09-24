@@ -164,12 +164,12 @@ class RealGarminClient:
         )
         api.login(tokenstore=str(self._token_dir))
 
-        # Ensure token directory has restricted permissions
-        if self._token_dir.exists():
-            self._token_dir.chmod(0o700)
-            for f in self._token_dir.iterdir():
-                if f.is_file():
-                    f.chmod(0o600)
+        if not all((self._token_dir / name).is_file() for name in ("oauth1_token.json", "oauth2_token.json")):
+            raise RuntimeError("Garmin login succeeded, but token files were not saved")
+        self._token_dir.chmod(0o700)
+        for f in self._token_dir.iterdir():
+            if f.is_file():
+                f.chmod(0o600)
 
         self._client = api
         return True

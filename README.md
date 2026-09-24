@@ -149,7 +149,9 @@ tempo, høyde). Bruker et Python-hjelpescript (`scripts/garmin_client/`) med
 ```
 
 **Autentisering** skjer via interaktiv CLI (`scripts/auth-garmin.mjs`), aldri
-via web-UI-et. Tokens lagres i `config/keys/garmin-<id>.token.json` (chmod 0600).
+via web-UI-et. Tokens lagres i `config/keys/garmin-<id>/` (katalog 0700,
+filer 0600). Opprett først kilden under Innstillinger → Datakilder; kjør deretter
+på maskinen som kjører Trenern (i container: `podman exec -it systemd-trenern node scripts/auth-garmin.mjs --source-id garmin-mitt`):
 
 ```bash
 node scripts/auth-garmin.mjs --source-id garmin-mitt
@@ -162,8 +164,11 @@ node scripts/auth-garmin.mjs --source-id garmin-mitt
 (lekker via `ps`). Skriptet spør på stdin.
 
 **Inkrementell synk:** Bruker Garmins stabile aktivitets-ID som referanse i
-ingest-cachen, slik at bare nye/endrede aktiviteter lastes ned. GPS-spor
-lastes kun for aktiviteter som har polyline-data.
+ingest-cachen, slik at bare nye aktiviteter eller aktiviteter med endret tidsstempel/
+distanse lastes ned på nytt. Alle aktivitetssider leses ved hver synk; detaljer
+og eventuelle GPS-spor hentes bare ved ny/oppdatert aktivitet. Redigering av navn
+i Garmin Connect alene kan kreve tvunget import for å oppdages.
+Uten innloggingstoken feiler kilden tydelig; den bruker aldri eksempeldata.
 
 **Aktiviteter uten GPS** (styrketrening, yoga, indoor) inkluderes fortsatt —
 de får sammendragsdata (varighet, puls, kalorier) uten GPS-spor.

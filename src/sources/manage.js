@@ -208,11 +208,14 @@ export function removeSource(id) {
   const list = ensureSources();
   const idx = list.findIndex((s) => s.id === id);
   if (idx === -1) return { removed: false };
-  list.splice(idx, 1);
+  const [removed] = list.splice(idx, 1);
   saveConfig();
-  try {
-    fs.unlinkSync(keyFileFor(id));
-  } catch {}
+  if (removed.type === 'garminConnect') {
+    // Token lives in a dedicated directory derived from the source ID.
+    fs.rmSync(tokenFileFor(id), { recursive: true, force: true });
+  } else {
+    try { fs.unlinkSync(keyFileFor(id)); } catch {}
+  }
   return { removed: true };
 }
 

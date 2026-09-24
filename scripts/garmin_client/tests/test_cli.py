@@ -65,24 +65,22 @@ class TestCliRunner:
         )
         assert result.returncode != 0
 
-    def test_login_command_no_email(self):
-        """login without --email must error."""
+    def test_login_requires_tty(self):
+        """No credential prompt through pipes or unauthenticated HTTP."""
         result = subprocess.run(
-            [*_PYTHON, "-m", "garmin_client", "login"],
+            [*_PYTHON, "-m", "garmin_client", "login", "--token", "/nonexistent"],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode != 0
-        assert "email" in (result.stderr + result.stdout).lower()
+        assert "interactive terminal" in (result.stderr + result.stdout).lower()
 
-    def test_login_mfa_is_stub(self):
-        """login-mfa returns ok with note (MFA handled in login step)."""
+    def test_login_mfa_stub_is_removed(self):
+        """MFA cannot falsely report success without completing a login."""
         result = subprocess.run(
             [*_PYTHON, "-m", "garmin_client", "login-mfa"],
             capture_output=True, text=True, timeout=10,
         )
-        assert result.returncode == 0
-        data = json.loads(result.stdout)
-        assert data.get("ok") is True
+        assert result.returncode != 0
 
     def test_status_without_token_errors(self):
         """status without --token must error."""
