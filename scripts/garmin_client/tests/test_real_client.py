@@ -184,6 +184,16 @@ class TestRealClientResume:
                     tokenstore=str(token_dir)
                 )
 
+    def test_resume_accepts_single_file_tokenstore(self, tmp_path):
+        token_dir = tmp_path / 'garmin-connect'
+        token_dir.mkdir()
+        (token_dir / 'garmin_tokens.json').write_text('{}')
+        client = create_real_client(str(token_dir), 'garmin-connect')
+        with patch('garmin_client.real_client.GarminConnect') as MockGarmin:
+            MockGarmin.return_value.login.return_value = (None, None)
+            assert client.resume() is True
+            MockGarmin.return_value.login.assert_called_once_with(tokenstore=str(token_dir))
+
     def test_resume_fails_with_missing_token_dir(self):
         """Resume returns False when token directory doesn't exist."""
         client = create_real_client("/nonexistent/keys/test", "test-garmin")
@@ -415,6 +425,20 @@ class TestRealClientLogin:
 
                 result = client.login("test@example.com")
                 assert result is True
+    def test_login_accepts_single_file_tokenstore_and_restricts_permissions(self, tmp_path):
+        token_dir = tmp_path / 'garmin-connect'
+        token_dir.mkdir(mode=0o755)
+        client = create_real_client(str(token_dir), 'garmin-connect')
+        def persist_single(*, tokenstore):
+            (Path(tokenstore) / 'garmin_tokens.json').write_text('{}')
+            return None, None
+        with (patch('garmin_client.real_client.GarminConnect') as MockGarmin,
+              patch('garmin_client.real_client.getpass', return_value='secret')):
+            MockGarmin.return_value.login.side_effect = persist_single
+            assert client.login('test@example.com') is True
+        assert (token_dir.stat().st_mode & 0o777) == 0o700
+        assert ((token_dir / 'garmin_tokens.json').stat().st_mode & 0o777) == 0o600
+
     def test_login_fails_when_garmin_did_not_persist_tokens(self, tmp_path):
         client = create_real_client(str(tmp_path / 'garmin'), 'test-garmin')
         with (patch('garmin_client.real_client.GarminConnect') as MockGarmin,

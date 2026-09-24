@@ -55,9 +55,13 @@ export function redactSource(cfg) {
   }
   if (cfg.type === 'localFolder') out.path = cfg.path || '';
   if (cfg.type === 'garminConnect') {
-    // Token directory path is derived from the source ID; check for oauth2_token.json inside.
+    // Both current DI token file and legacy OAuth token pair are supported.
     const tokenPath = cfg.tokenFile ? resolvePath(cfg.tokenFile) : tokenFileFor(cfg.id);
-    out.hasToken = tokenPath ? fs.existsSync(path.join(tokenPath, 'oauth2_token.json')) : false;
+    out.hasToken = !!(tokenPath && (
+      fs.existsSync(path.join(tokenPath, 'garmin_tokens.json')) ||
+      (fs.existsSync(path.join(tokenPath, 'oauth1_token.json')) &&
+        fs.existsSync(path.join(tokenPath, 'oauth2_token.json')))
+    ));
   }
   return out;
 }

@@ -53,6 +53,16 @@ describe('GarminConnectConfig', () => {
     assert.equal(result.source.hasToken, false, 'no token file for fresh source');
   });
 
+  it('recognizes single-file Garmin tokens without exposing them', async () => {
+    const { redactSource } = await import('../src/sources/manage.js');
+    const tokenDir = path.join(tmpDir, 'garmin-tokens');
+    fs.mkdirSync(tokenDir);
+    fs.writeFileSync(path.join(tokenDir, 'garmin_tokens.json'), '{}');
+    const source = redactSource({ id: 'test', type: 'garminConnect', tokenFile: tokenDir, enabled: false });
+    assert.equal(source.hasToken, true);
+    assert.equal(source.tokenFile, undefined);
+  });
+
   it('addSource creates a valid source config', async () => {
     const manage = await import('../src/sources/manage.js');
     const result = manage.addSource({

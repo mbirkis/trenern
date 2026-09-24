@@ -1,8 +1,8 @@
 """Real Garmin client wrapper using the garminconnect library.
 
 Uses the installed garminconnect.Garmin class for API operations.
-Token storage uses garth dump/load directory format (oauth1_token.json +
-oauth2_token.json) as managed by garminconnect.Garmin.login(tokenstore=...).
+Token storage supports both garmin_tokens.json (DI refresh token in garminconnect
+0.3.2) and the older OAuth token pair used by other releases.
 
 GPS track data is decoded from the metricDescriptors + activityDetailMetrics
 format returned by get_activity_details().
@@ -109,6 +109,14 @@ class RealGarminClient:
         self._source_id = source_id
         self._client = None
 
+    def _token_files(self):
+        """Accept both current DI tokenstore and legacy OAuth token pair."""
+        single = self._token_dir / "garmin_tokens.json"
+        if single.is_file():
+            return [single]
+        pair = [self._token_dir / name for name in ("oauth1_token.json", "oauth2_token.json")]
+        return pair if all(p.is_file() for p in pair) else []
+
     # ── auth ──────────────────────────────────────────────────────────────
 
     def resume(self):
@@ -117,10 +125,7 @@ class RealGarminClient:
         Returns True if tokens exist and are valid, False otherwise.
         Does NOT prompt for credentials.
         """
-        oauth1 = self._token_dir / "oauth1_token.json"
-        oauth2 = self._token_dir / "oauth2_token.json"
-
-        if not oauth1.exists() or not oauth2.exists():
+        if not self._token_files():
             logger.debug("Token directory %s missing token files", self._token_dir)
             return False
 
@@ -164,7 +169,7 @@ class RealGarminClient:
         )
         api.login(tokenstore=str(self._token_dir))
 
-        if not all((self._token_dir / name).is_file() for name in ("oauth1_token.json", "oauth2_token.json")):
+        if not self._token_files():
             raise RuntimeError("Garmin login succeeded, but token files were not saved")
         self._token_dir.chmod(0o700)
         for f in self._token_dir.iterdir():

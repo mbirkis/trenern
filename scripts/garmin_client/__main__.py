@@ -22,6 +22,9 @@ from garmin_client.client import create_real_client
 
 
 def main():
+    # Older garminconnect releases write tokens using the process umask.
+    # Restrict token files even if login or a later refresh exits early.
+    os.umask(0o077)
     parser = argparse.ArgumentParser(
         description="Garmin Connect client CLI (--token required for data ops)"
     )
