@@ -16,6 +16,15 @@ npm run sample                                       # lager 3 eksempel-økter i
 npm start                                            # http://127.0.0.1:3005
 ```
 
+**Python-avhengighet:** Garmin Connect-synk krever Python 3 + `garminconnect`.
+Opprett virtuelt miljø manuelt om du ikke bruker Docker:
+
+```bash
+scripts/garmin_client/.venv/bin/pip install garminconnect
+```
+
+I containeren (podman/docker) gjøres dette automatisk av Containerfile.
+
 `npm start` kjører en ingest ved oppstart og deretter hvert `ingest.intervalMinutes`.
 Knappen **Synk nå** i toppen trigger en manuell henting.
 
@@ -128,12 +137,44 @@ Leser `*.json` fra en Google Drive-mappe (og undermapper hvis `recursive`).
 
 Alternativt, for en offentlig delt mappe: `"auth": { "method": "apiKey", "apiKey": "..." }`.
 
+### `garminConnect`
+
+Henter aktivitetsdata direkte fra Garmin Connect API (aktiviteter, GPS-spor, puls,
+tempo, høyde). Bruker et Python-hjelpescript (`scripts/garmin_client/`) med
+`garminconnect`-biblioteket.
+
+```json
+{ "id": "garmin-mitt", "type": "garminConnect", "enabled": true,
+  "label": "Min Garmin-konto" }
+```
+
+**Autentisering** skjer via interaktiv CLI (`scripts/auth-garmin.mjs`), aldri
+via web-UI-et. Tokens lagres i `config/keys/garmin-<id>.token.json` (chmod 0600).
+
+```bash
+node scripts/auth-garmin.mjs --source-id garmin-mitt
+# -> skriver inn e-post / passord på stdin
+# -> ved 2FA: skriver inn kode fra autentikator-app
+# -> token lagres, klart til ingest
+```
+
+**Viktig:** Ikke send passord eller 2FA-koder som kommandolinjeargumenter
+(lekker via `ps`). Skriptet spør på stdin.
+
+**Inkrementell synk:** Bruker Garmins stabile aktivitets-ID som referanse i
+ingest-cachen, slik at bare nye/endrede aktiviteter lastes ned. GPS-spor
+lastes kun for aktiviteter som har polyline-data.
+
+**Aktiviteter uten GPS** (styrketrening, yoga, indoor) inkluderes fortsatt —
+de får sammendragsdata (varighet, puls, kalorier) uten GPS-spor.
+
 ## Filformater (parsere)
 
 Ingest prøver parserne i rekkefølge og bruker den første som kjenner igjen fila:
 
 | Parser | Kjenner igjen |
 | --- | --- |
+| `garminConnect` | Data fra Garmin Connect (`_garmin: true`). Håndterer både GPS- og ikke-GPS-aktiviteter |
 | `healthAutoExport` | JSON fra iOS-appen *Health Auto Export* (`data.workouts[]` med `route`, `heartRateData`, `stepCount` …) |
 | `genericTrack` | Fallback: en punktliste med `lat`/`lon` (+ valgfritt `ele`, `hr`, `time`) under vanlige nøkler (`track`, `points`, `route`, `samples`, `coordinates` …) pluss løs metadata |
 

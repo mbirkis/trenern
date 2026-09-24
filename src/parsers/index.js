@@ -1,9 +1,10 @@
+import garminConnect from './garminConnect.js';
 import healthAutoExport from './healthAutoExport.js';
 import genericTrack from './genericTrack.js';
 import { finalizeActivity } from '../model.js';
 
 // Order matters: most specific first. genericTrack is the catch-all fallback.
-const PARSERS = [healthAutoExport, genericTrack];
+const PARSERS = [garminConnect, healthAutoExport, genericTrack];
 
 export function listParsers() {
   return PARSERS.map((p) => p.id);

@@ -27,6 +27,10 @@ function keyFileFor(id) {
   return path.join(config.paths.keys, `${id}.json`);
 }
 
+function tokenFileFor(id) {
+  return path.join(config.paths.keys, `garmin-${id}.token.json`);
+}
+
 /** Public, secret-free view of one source config. */
 export function redactSource(cfg) {
   const auth = cfg.auth || {};
@@ -50,6 +54,11 @@ export function redactSource(cfg) {
     out.serviceAccountEmail = readServiceAccountEmail(keyPath);
   }
   if (cfg.type === 'localFolder') out.path = cfg.path || '';
+  if (cfg.type === 'garminConnect') {
+    // Only expose whether a token file exists, never the token itself.
+    const tokenPath = cfg.tokenFile ? resolvePath(cfg.tokenFile) : tokenFileFor(cfg.id);
+    out.hasToken = tokenPath ? fs.existsSync(tokenPath) : false;
+  }
   return out;
 }
 
@@ -135,6 +144,12 @@ function validate(input, { existingId } = {}) {
     const p = (input.path || '').trim();
     if (!p) errors.push('path er påkrevd for lokal mappe');
     cfg.path = p;
+  } else if (type === 'garminConnect') {
+    // Token file path is derived from the source ID; no user input needed.
+    // Bootstrap auth via scripts/auth-garmin.mjs (interactive CLI), never web UI.
+    cfg.tokenFile = `./config/keys/garmin-${id}.token.json`;
+    cfg.filePattern = null; // not applicable for Garmin — files are API activities
+    cfg.recursive = false;  // not applicable
   }
 
   return { errors, cfg };

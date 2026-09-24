@@ -48,6 +48,12 @@
       },
       "recursive": true,
       "filePattern": "\\.json$"
+    },
+    {
+      "id": "garmin-mitt",
+      "type": "garminConnect",
+      "enabled": false,
+      "label": "Garmin Connect (sett opp via auth-garmin.mjs)"
     }
   ]
 }

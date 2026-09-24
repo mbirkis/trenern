@@ -1,0 +1,1 @@
+"""Garmin Connect client wrapper for Trenern."""

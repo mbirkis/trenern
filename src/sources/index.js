@@ -1,10 +1,12 @@
 import { createLocalFolderSource } from './localFolder.js';
 import { createGoogleDriveSource } from './googleDrive.js';
+import { createGarminConnectSource } from './garminConnect.js';
 import config from '../config.js';
 
 const FACTORIES = {
   localFolder: createLocalFolderSource,
   googleDrive: createGoogleDriveSource,
+  garminConnect: createGarminConnectSource,
 };
 
 export function registeredSourceTypes() {
