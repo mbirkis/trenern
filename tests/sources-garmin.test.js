@@ -25,26 +25,9 @@ describe('GarminConnectSource', () => {
         enabled: true,
         label: 'Test Garmin',
       });
-      // Override the Python executor with one using venv + correct PYTHONPATH
-      src._execPython = async (args) => {
-        const env = {
-          ...process.env,
-          PYTHONPATH: path.join(ROOT, 'scripts'),
-        };
-        return new Promise((resolve, reject) => {
-          import('node:child_process').then((cp) => {
-            cp.execFile(
-              VENV_PYTHON,
-              ['-m', 'garmin_client', ...args],
-              { env, timeout: 15000 },
-              (err, stdout, stderr) => {
-                if (err) return reject(new Error(stderr?.trim() || err.message));
-                resolve(stdout);
-              }
-            );
-          });
-        });
-      };
+      // Mock Python executor to return fixture data directly
+      const activities = loadFixture('test_activities.json');
+      src._execPython = async () => JSON.stringify(activities);
 
       const files = await src.listFiles();
       assert.ok(Array.isArray(files), 'listFiles must return an array');

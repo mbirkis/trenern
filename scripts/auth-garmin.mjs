@@ -43,7 +43,7 @@ Options:
   --source-id   The ID of the garminConnect source in config.json (required)
   --help        Show this message
 
-The token is saved to config/keys/garmin-<source-id>.token.json (chmod 0600).
+The token is saved to config/keys/garmin-<source-id>/ (garth dump directory format).
 `);
 }
 
@@ -117,7 +117,7 @@ async function main() {
 
   const tokenFile = source.tokenFile
     ? path.resolve(ROOT, source.tokenFile)
-    : path.join(ROOT, 'config', 'keys', `garmin-${sourceId}.token.json`);
+    : path.join(ROOT, 'config', 'keys', `garmin-${sourceId}`);
 
   console.log(`\n=== Garmin Connect Authentication for "${sourceId}" ===`);
   console.log(`Token will be saved to: ${tokenFile}\n`);

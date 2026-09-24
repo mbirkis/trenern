@@ -31,10 +31,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 python3-pip python3-venv \
  && rm -rf /var/lib/apt/lists/*
 
-# Set up the garmin_client venv inside the container.
+# Set up the garmin_client venv inside the container with correct ownership.
 COPY scripts/garmin_client ./scripts/garmin_client
 RUN python3 -m venv scripts/garmin_client/.venv \
- && scripts/garmin_client/.venv/bin/pip install --no-cache-dir 'garminconnect>=0.3'
+ && scripts/garmin_client/.venv/bin/pip install --no-cache-dir 'garminconnect>=0.3,<1.0' \
+ && chown -R node:node scripts/garmin_client/.venv
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/src ./src

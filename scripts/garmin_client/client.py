@@ -1,8 +1,8 @@
 """Garmin Connect client wrapper for Trenern.
 
 Provides:
-- GarminClientInterface: protocol for Garmin API access
-- create_fake_client(): returns a fake client using fixture data (testing)
+- GarminClientInterface: protocol for Garmin API access (processable by tests)
+- create_fake_client(): returns a fake client using fixture data (testing only)
 - create_real_client(token_dir, source_id): returns a live client using garminconnect
 """
 from .interface import GarminClientInterface
@@ -19,7 +19,10 @@ def create_real_client(token_dir, source_id):
     """Return a RealGarminClient that calls the Garmin Connect API.
 
     Args:
-        token_dir: Path to directory where tokens are stored (config/keys/)
+        token_dir: Path to garth-format token directory (config/keys/garmin-{id}/)
         source_id: Source ID used as the token filename prefix
+
+    The client starts unauthenticated; call client.resume() to load stored
+    tokens, or client.login(email) for interactive auth.
     """
-    raise NotImplementedError("Real client requires Garmin credentials; use create_fake_client for tests")
+    return RealGarminClient(token_dir, source_id)
