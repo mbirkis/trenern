@@ -390,15 +390,20 @@ function drawOverview() {
   const all = [];
   for (const r of routes) {
     if (!r.points || r.points.length < 2) continue;
+    // A dark, non-interactive casing separates the route from busy topo tiles.
+    L.polyline(r.points, {
+      color: '#102030', weight: 9, opacity: 0.85,
+      interactive: false, lineCap: 'round', lineJoin: 'round',
+    }).addTo(overviewLayer);
     const line = L.polyline(r.points, {
       color: TYPE_COLORS[r.type] || TYPE_COLORS.other,
-      weight: 3,
-      opacity: 0.55,
+      weight: 4.5, opacity: 1,
+      lineCap: 'round', lineJoin: 'round',
     });
     line.bindTooltip(`${r.name} · ${fmtDate(r.start)}`, { sticky: true });
     line.on('click', () => selectActivity(r.id));
-    line.on('mouseover', () => line.setStyle({ weight: 5, opacity: 0.95 }));
-    line.on('mouseout', () => line.setStyle({ weight: 3, opacity: 0.55 }));
+    line.on('mouseover', () => line.setStyle({ weight: 6 }));
+    line.on('mouseout', () => line.setStyle({ weight: 4.5 }));
     line.addTo(overviewLayer);
     all.push(...r.points);
   }
@@ -572,6 +577,11 @@ function drawRoute(a) {
     return;
   }
   const zoneBounds = a.hrZones || (appConfig && appConfig.hrZones) || [];
+  // A continuous outline keeps short HR-coloured segments legible over the map.
+  L.polyline(pts.map((p) => [p.lat, p.lon]), {
+    color: '#102030', weight: 11, opacity: 0.9,
+    interactive: false, lineCap: 'round', lineJoin: 'round',
+  }).addTo(routeLayer);
   // Build coloured segments by HR zone; fall back to a single accent line.
   let curZone = zoneOf(pts[0].hr, zoneBounds);
   let seg = [[pts[0].lat, pts[0].lon]];
@@ -579,8 +589,9 @@ function drawRoute(a) {
     if (seg.length < 2) return;
     L.polyline(seg, {
       color: z ? ZONE_COLORS[z - 1] : '#0072f5',
-      weight: 4,
-      opacity: 0.9,
+      weight: 5.5,
+      opacity: 1,
+      lineCap: 'round', lineJoin: 'round',
     }).addTo(routeLayer);
   };
   for (let i = 1; i < pts.length; i++) {
