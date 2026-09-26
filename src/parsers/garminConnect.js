@@ -27,7 +27,14 @@ export default {
   },
 
   parse(json, ctx) {
-    const typeKey = json.activityType?.typeKey || json._garminType || 'other';
+    // Garmin detail responses nest metrics under summaryDTO, unlike list responses.
+    // Preserve support for the legacy flat payload and do not mutate the input.
+    const summary = json.summaryDTO || {};
+    json = { ...json, ...summary };
+    json.averageHeartRate = json.averageHeartRate ?? summary.averageHR;
+    json.maxHeartRate = json.maxHeartRate ?? summary.maxHR;
+    json.averageRunningCadence = json.averageRunningCadence ?? summary.averageRunCadence;
+    const typeKey = json.activityTypeDTO?.typeKey || json.activityType?.typeKey || json._garminType || 'other';
     const startStr = json.startTimeGMT
       ? iso(`${json.startTimeGMT.replace(' ', 'T')}Z`)
       : iso(json.beginTimestamp) || iso(json.startTime) || iso(json.startTimeLocal);

@@ -44,5 +44,8 @@ export function parseDocument(json, ctx) {
       .filter((a) => a && a.start); // an activity needs at least a start time
     if (activities.length) return activities;
   }
+  if (json?._garmin === true) {
+    throw new Error(`Garmin-aktivitet ${json.activityId || ctx.ref} kunne ikke tolkes (mangler gyldig starttid eller aktivitetsdata)`);
+  }
   return [];
 }
