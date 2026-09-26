@@ -484,6 +484,33 @@ class TestCliNoFakeOnMissingToken:
 class TestGpsFromRawMetricDescriptors:
     """GPS track points decoded from raw metricDescriptors format."""
 
+    def test_decode_garmin_direct_metric_keys(self):
+        from garmin_client.real_client import _decode_track_from_detail
+
+        detail = {
+            "metricDescriptors": [
+                {"key": "directTimestamp", "metricsIndex": 0},
+                {"key": "directLongitude", "metricsIndex": 1},
+                {"key": "directHeartRate", "metricsIndex": 2},
+                {"key": "directLatitude", "metricsIndex": 3},
+                {"key": "directElevation", "metricsIndex": 4},
+                {"key": "directSpeed", "metricsIndex": 5},
+                {"key": "directDoubleCadence", "metricsIndex": 6},
+            ],
+            "activityDetailMetrics": [
+                {"metrics": [1718439000000, 10.75297, 120, 59.91333, 100, 3.5, 160]},
+                {"metrics": [1718439010000, 10.75320, 125, 59.91350, 101, 3.6, 162]},
+                {"metrics": [1718439020000, None, 130, None, 102, 3.6, 162]},
+            ],
+        }
+        track = _decode_track_from_detail(detail)
+        assert len(track) == 2
+        assert track[0] == {
+            "t": 1718439000000, "lon": 10.75297, "hr": 120,
+            "lat": 59.91333, "ele": 100, "speed": 3.5, "cad": 160,
+        }
+        assert track[1]["lat"] == 59.91350
+
     def test_parse_metric_descriptors_to_track(self):
         from garmin_client.real_client import _decode_track_from_detail
 

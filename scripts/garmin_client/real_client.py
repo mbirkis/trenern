@@ -48,6 +48,14 @@ def _decode_track_from_detail(detail):
 
     # Map garminconnect metric key names to our track field names
     KEY_MAP = {
+        "directLatitude": "lat",
+        "directLongitude": "lon",
+        "directElevation": "ele",
+        "directHeartRate": "hr",
+        "directTimestamp": "t",
+        "directDoubleCadence": "cad",
+        "directBikeCadence": "cad",
+        "directSpeed": "speed",
         "lat": "lat",
         "lon": "lon",
         "lng": "lon",
