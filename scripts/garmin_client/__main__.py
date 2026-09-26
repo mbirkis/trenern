@@ -18,7 +18,6 @@ import json
 import sys
 import os
 
-from garmin_client.client import create_real_client
 
 
 def main():
@@ -30,14 +29,17 @@ def main():
     )
     parser.add_argument(
         "command",
-        choices=["list-activities", "get-activity", "login", "status"],
+        choices=["list-activities", "get-activity", "login", "status", "get-health"],
     )
     parser.add_argument("--start", type=int, default=0)
     parser.add_argument("--limit", type=int, default=20)
     parser.add_argument("--activity-id", type=str, default=None)
     parser.add_argument("--token", type=str, required=True)
 
+    parser.add_argument("--date", type=str)
+
     args = parser.parse_args()
+    from garmin_client.client import create_real_client
 
     if args.command == "login":
         if not sys.stdin.isatty():
@@ -83,6 +85,13 @@ def main():
         except ValueError as e:
             print(json.dumps({"error": str(e)}), file=sys.stderr)
             sys.exit(1)
+
+    elif args.command == "get-health":
+        from datetime import date
+        if not args.date:
+            parser.error("--date is required")
+        date.fromisoformat(args.date)
+        print(json.dumps(client.get_health_json(args.date)), file=sys.stdout)
 
     elif args.command == "status":
         print(json.dumps({"ok": True, "source_id": source_id}), file=sys.stdout)

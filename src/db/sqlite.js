@@ -43,6 +43,10 @@ export function createSqlite() {
 
     async init() {
       db.exec(`CREATE TABLE IF NOT EXISTS activities (\n${colDefs}\n);`);
+      db.exec(`CREATE TABLE IF NOT EXISTS garmin_health (
+        source TEXT NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL,
+        PRIMARY KEY (source, date)
+      );`);
       db.exec(
         `CREATE INDEX IF NOT EXISTS idx_activities_start ON activities(start_time DESC);
          CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(type);`
@@ -58,7 +62,7 @@ export function createSqlite() {
       return r ? rowToActivity(r.data) : null;
     },
 
-    async list({ type, from, to } = {}) {
+    async list({ type, from, to, full = false, metrics = false } = {}) {
       const where = [];
       const params = {};
       if (type) {
@@ -74,10 +78,10 @@ export function createSqlite() {
         params.to = to;
       }
       const sql =
-        `SELECT ${summaryNames.join(', ')} FROM activities` +
+        `SELECT ${full ? 'data' : summaryNames.join(', ') + (metrics ? " , json_extract(data, '$.metrics') AS stats_metrics" : '')} FROM activities` +
         (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
         ' ORDER BY start_time DESC';
-      return db.prepare(sql).all(params).map(rowToSummary);
+      return db.prepare(sql).all(params).map(r => full ? rowToActivity(r.data) : { ...rowToSummary(r), ...(metrics ? {metrics: rowToActivity(r.stats_metrics) || {}} : {}) });
     },
 
     async listTracks({ type, from, to } = {}) {
@@ -118,17 +122,22 @@ export function createSqlite() {
     },
 
     async stats() {
-      const rows = db
-        .prepare('SELECT type, distance_m, moving_time_sec, elevation_gain_m FROM activities')
-        .all();
-      return computeStats(
-        rows.map((r) => ({
-          type: r.type,
-          distanceM: r.distance_m,
-          movingTimeSec: r.moving_time_sec,
-          elevationGainM: r.elevation_gain_m,
-        }))
-      );
+      return computeStats(await this.list({ metrics: true }));
+    },
+
+    async upsertHealth(record) {
+      db.prepare(`INSERT INTO garmin_health (source, date, data) VALUES (?, ?, ?)
+        ON CONFLICT(source, date) DO UPDATE SET data = excluded.data`)
+        .run(record.source, record.date, JSON.stringify(record));
+    },
+
+    async listHealth({ source, from, to } = {}) {
+      const where = [], params = {};
+      for (const [key, value] of Object.entries({ source, from, to })) {
+        if (value) { where.push(`${key === 'source' ? 'source =' : key === 'from' ? 'date >=' : 'date <='} @${key}`); params[key] = value; }
+      }
+      return db.prepare('SELECT data FROM garmin_health' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY date DESC, source')
+        .all(params).map(r => rowToActivity(r.data));
     },
 
     async close() {

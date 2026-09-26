@@ -181,7 +181,7 @@ class TestRealClientResume:
                 assert result is True
                 # Login called with token directory
                 mock_instance.login.assert_called_once_with(
-                    tokenstore=str(token_dir)
+                    tokenstore=str(token_dir.resolve())
                 )
 
     def test_resume_accepts_single_file_tokenstore(self, tmp_path):

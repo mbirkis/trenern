@@ -12,6 +12,7 @@ import {
 } from './sources/manage.js';
 import { listParsers } from './parsers/index.js';
 import { runIngest, ingestStatus, startScheduler } from './ingest.js';
+import { computeStats } from './db/shared.js';
 import { hrZoneBounds } from './model.js';
 
 const app = express();
@@ -117,38 +118,25 @@ app.get('/api/stats', async (_req, res, next) => {
 });
 
 // Per-calendar-year aggregates for the statistics / year-comparison page.
+app.get('/api/garmin/health', async (req, res, next) => {
+  try {
+    res.json({ days: await store.listHealth({ source: req.query.source, from: req.query.from, to: req.query.to }) });
+  } catch (err) { next(err); }
+});
+
 app.get('/api/stats/by-year', async (_req, res, next) => {
   try {
-    const rows = await store.list({});
+    const rows = await store.list({ metrics: true });
     const years = new Map();
     for (const a of rows) {
       const d = a.start ? new Date(a.start) : null;
       if (!d || Number.isNaN(d.getTime())) continue;
       const y = d.getFullYear();
-      let b = years.get(y);
-      if (!b) {
-        b = {
-          year: y,
-          count: 0,
-          totalDistanceM: 0,
-          totalMovingTimeSec: 0,
-          totalElevationGainM: 0,
-          byType: {},
-        };
-        years.set(y, b);
-      }
-      b.count += 1;
-      b.totalDistanceM += a.distanceM || 0;
-      b.totalMovingTimeSec += a.movingTimeSec || 0;
-      b.totalElevationGainM += a.elevationGainM || 0;
-      b.byType[a.type] = (b.byType[a.type] || 0) + 1;
+      if (!years.has(y)) years.set(y, []);
+      years.get(y).push(a);
     }
-    const list = [...years.values()].sort((x, y) => y.year - x.year);
-    for (const b of list) {
-      b.totalDistanceM = Math.round(b.totalDistanceM);
-      b.totalMovingTimeSec = Math.round(b.totalMovingTimeSec);
-      b.totalElevationGainM = Math.round(b.totalElevationGainM);
-    }
+    const list = [...years.entries()].map(([year, activities]) => ({ year, ...computeStats(activities) }))
+      .sort((x, y) => y.year - x.year);
     res.json({ years: list });
   } catch (err) {
     next(err);

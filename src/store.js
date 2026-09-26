@@ -103,3 +103,10 @@ export async function close() {
   _db = null;
   _booting = null;
 }
+
+export async function upsertHealth(record) {
+  return (await db()).upsertHealth(record);
+}
+export async function listHealth(opts = {}) {
+  return (await db()).listHealth(opts);
+}

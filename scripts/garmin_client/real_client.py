@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 MAX_ACTIVITY_LIMIT = 1000
 
 
-def _decode_track_from_detail(detail):
+def _decode_track_from_detail(detail, include_non_gps=False):
     """Decode metricDescriptors + activityDetailMetrics into unified track points.
 
     The Garmin API returns GPS data as positional arrays with descriptors mapping
@@ -56,6 +56,11 @@ def _decode_track_from_detail(detail):
         "directDoubleCadence": "cad",
         "directBikeCadence": "cad",
         "directSpeed": "speed",
+        "directPower": "power",
+        "directAirTemperature": "temp",
+        "directVerticalOscillation": "verticalOscillation",
+        "directGroundContactTime": "groundContactTime",
+        "directStrideLength": "strideLength",
         "lat": "lat",
         "lon": "lon",
         "lng": "lon",
@@ -76,7 +81,7 @@ def _decode_track_from_detail(detail):
             if idx < len(metrics) and metrics[idx] is not None:
                 mapped = KEY_MAP.get(key_name, key_name)
                 pt[mapped] = metrics[idx]
-        if "lat" in pt and "lon" in pt:
+        if ("lat" in pt and "lon" in pt) or (include_non_gps and pt):
             track.append(pt)
 
     return track
@@ -246,4 +251,67 @@ class RealGarminClient:
 
         merged = _merge_summary_and_detail(summary, detail)
         merged["track"] = _decode_track_from_detail(detail)
+        merged["samples"] = _decode_track_from_detail(detail, include_non_gps=True)
+        calls = {
+            "hrTimeInZones": ("get_activity_hr_in_timezones", (str(activity_id),)),
+            "powerTimeInZones": ("get_activity_power_in_timezones", (str(activity_id),)),
+            "splits": ("get_activity_splits", (str(activity_id),)),
+            "typedSplits": ("get_activity_typed_splits", (str(activity_id),)),
+            "splitSummaries": ("get_activity_split_summaries", (str(activity_id),)),
+            "exerciseSets": ("get_activity_exercise_sets", (str(activity_id),)),
+            "weather": ("get_activity_weather", (str(activity_id),)),
+            "configuredHrZones": ("get_heart_rate_zones", ()),
+        }
+        merged["garminExtras"], merged["endpointStatus"] = self._collect(calls)
         return merged
+
+
+    def _collect(self, calls):
+        """Optional metrics must not prevent activity import; failures remain visible.
+
+        Authentication and throttling stop the sync rather than issuing more requests.
+        Never persist exception text, which can contain account identifiers.
+        """
+        data, statuses = {}, {}
+        for key, (method, args) in calls.items():
+            fn = getattr(self._client, method, None)
+            if not callable(fn):
+                statuses[key] = "unsupported"
+                continue
+            try:
+                value = fn(*args)
+                # Also makes transport mocks and malformed responses fail explicitly.
+                json.dumps(value, allow_nan=False)
+                if value is None or value == {} or value == []:
+                    statuses[key] = "empty"
+                else:
+                    data[key] = value
+                    statuses[key] = "ok"
+            except Exception as exc:
+                name = type(exc).__name__
+                if "Authentication" in name or "TooManyRequests" in name:
+                    raise
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status in (401, 429):
+                    raise
+                statuses[key] = "unsupported" if status in (400, 404, 204) else "error"
+        return data, statuses
+
+    def get_health_json(self, cdate):
+        self._ensure_authenticated()
+        calls = {key: (method, (cdate,)) for key, method in {
+            "daily": "get_stats", "heartRate": "get_heart_rates",
+            "steps": "get_steps_data", "floors": "get_floors",
+            "sleep": "get_sleep_data", "hrv": "get_hrv_data",
+            "stress": "get_stress_data", "bodyBattery": "get_body_battery",
+            "spo2": "get_spo2_data", "respiration": "get_respiration_data",
+            "intensityMinutes": "get_intensity_minutes_data",
+            "restingHeartRate": "get_rhr_day", "vo2Max": "get_max_metrics",
+            "trainingStatus": "get_training_status",
+            "trainingReadiness": "get_training_readiness",
+            "fitnessAge": "get_fitnessage_data",
+        }.items()}
+        data, statuses = self._collect(calls)
+        if not data and any(v == "error" for v in statuses.values()):
+            raise RuntimeError("Garmin health endpoints failed; day will be retried")
+        return {"date": cdate, "data": data, "endpointStatus": statuses}

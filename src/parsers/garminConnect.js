@@ -10,6 +10,7 @@
  * registered before genericTrack in the PARSERS array.
  */
 import { activityId } from '../model.js';
+import { garminZones, garminMetrics } from './garminMetrics.js';
 
 const NUM = (v) => (v == null || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null);
 const iso = (v) => {
@@ -36,27 +37,29 @@ export default {
     json.averageRunningCadence = json.averageRunningCadence ?? summary.averageRunCadence;
     const typeKey = json.activityTypeDTO?.typeKey || json.activityType?.typeKey || json._garminType || 'other';
     const startStr = json.startTimeGMT
-      ? iso(`${json.startTimeGMT.replace(' ', 'T')}Z`)
+      ? iso(/(?:Z|[+-]\d{2}:?\d{2})$/.test(json.startTimeGMT) ? json.startTimeGMT : `${json.startTimeGMT.replace(' ', 'T')}Z`)
       : iso(json.beginTimestamp) || iso(json.startTime) || iso(json.startTimeLocal);
     if (!startStr) return [];
     const startMs = Date.parse(startStr);
 
-    const rawTrack = Array.isArray(json.track) ? json.track : [];
-    const track = rawTrack.map((p) => {
+    const rawSamples = Array.isArray(json.samples) ? json.samples : (json.track || []);
+    const samples = rawSamples.map((p) => {
       const t = NUM(p.t);
       const seconds = t == null ? undefined
         : t > 1e11 ? (t - startMs) / 1000
         : t > 1e9 ? t - startMs / 1000 : t;
       return {
-        lat: NUM(p.lat), lon: NUM(p.lon), ele: NUM(p.ele) ?? undefined,
+        ...p, lat: NUM(p.lat), lon: NUM(p.lon), ele: NUM(p.ele) ?? undefined,
         hr: NUM(p.hr) ?? undefined, t: seconds, cad: NUM(p.cad) ?? undefined,
         speed: NUM(p.speed) ?? undefined,
       };
-    }).filter((p) => p.lat != null && p.lon != null && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180);
+    });
+    const track = samples.filter((p) => p.lat != null && p.lon != null && Math.abs(p.lat) <= 90 && Math.abs(p.lon) <= 180);
+    const hrZones = garminZones(json.garminExtras?.hrTimeInZones);
 
     // Duration: preferred movingDuration, fallback to duration
-    const movingSec = NUM(json.movingDuration) || NUM(json.duration);
-    const durSec = NUM(json.duration) || movingSec;
+    const movingSec = NUM(json.movingDuration) ?? NUM(json.duration);
+    const durSec = NUM(json.duration) ?? movingSec;
 
     const partial = {
       // identity
@@ -69,7 +72,7 @@ export default {
       type: typeKey,
 
       // name
-      name: json.activityName || json.activityName || null,
+      name: json.activityName || null,
 
       // times
       start: startStr,
@@ -83,19 +86,26 @@ export default {
       durationSec: durSec,
       movingTimeSec: movingSec,
       elevationGainM: NUM(json.elevationGain),
-      elevationLossM: NUM(json.elevationLoss) ?? NUM(json.elevationGain),
+      elevationLossM: NUM(json.elevationLoss),
       avgHr: NUM(json.averageHeartRate),
       maxHr: NUM(json.maxHeartRate),
       calories: NUM(json.calories),
       steps: NUM(json.steps),
-      avgCadence: NUM(json.averageCadence || json.averageRunningCadence),
-      avgPower: NUM(json.averagePower),
+      avgCadence: NUM(json.averageCadence ?? json.averageRunningCadence ?? json.averageBikeCadence),
+      avgPower: NUM(json.averagePower ?? json.avgPower),
       avgTempC: NUM(json.averageTemperature),
-      avgPaceSecPerKm: null, // let model derive from distance/time
+      avgPaceSecPerKm: null, // model uses authoritative distance/time
       maxSpeedMs: NUM(json.maxSpeed),
 
+      samples,
+      hrZones,
+      hrZoneSource: hrZones.length ? 'garmin' : 'estimated',
+      metrics: garminMetrics(json),
+      // Preserve all vendor measurements, including sport-specific fields.
       // extras: keep Garmin metadata
       extras: {
+        garmin: Object.fromEntries(Object.entries(json).filter(([key]) => !['track', 'samples', 'activityDetailMetrics', 'metricDescriptors'].includes(key))),
+        metricDescriptors: json.metricDescriptors || [],
         garminActivityId: json.activityId,
         garminTypeKey: typeKey,
         garminLocation: json.locationName || null,

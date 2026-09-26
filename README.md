@@ -20,7 +20,8 @@ npm start                                            # http://127.0.0.1:3005
 Opprett virtuelt miljø manuelt om du ikke bruker Docker:
 
 ```bash
-scripts/garmin_client/.venv/bin/pip install garminconnect
+python3 -m venv scripts/garmin_client/.venv
+scripts/garmin_client/.venv/bin/pip install 'garminconnect>=0.3,<1.0'
 ```
 
 I containeren (podman/docker) gjøres dette automatisk av Containerfile.
@@ -163,15 +164,48 @@ node scripts/auth-garmin.mjs --source-id garmin-mitt
 **Viktig:** Ikke send passord eller 2FA-koder som kommandolinjeargumenter
 (lekker via `ps`). Skriptet spør på stdin.
 
-**Inkrementell synk:** Bruker Garmins stabile aktivitets-ID som referanse i
-ingest-cachen, slik at bare nye aktiviteter eller aktiviteter med endret tidsstempel/
-distanse lastes ned på nytt. Alle aktivitetssider leses ved hver synk; detaljer
-og eventuelle GPS-spor hentes bare ved ny/oppdatert aktivitet. Redigering av navn
-i Garmin Connect alene kan kreve tvunget import for å oppdages.
+**Utvidet Garmin-import:** Aktiviteter inkluderer sammendrag, GPS-spor og
+måleserier for puls, kadens, fart, effekt og løpsdynamikk – også uten GPS.
+Garmins pulssoner, effektsoner, runder/intervaller, styrkesett, svømmedetaljer og
+vær hentes fra separate endepunkter. Ukjente Garmin-felt bevares og kan åpnes
+under «Alle Garmin-målinger». Garmin Connect kan levere nedskalerte måleserier
+(detaljforespørselen bruker `maxchart=2000`, `maxpoly=4000`); dette er ikke en
+import av hver enkelt original FIT-måling.
+
+Statistikksiden viser også daglige skritt, kalorier, etasjer, intensitetsminutter,
+døgnpuls/hvilepuls, søvn og søvnscore, HRV, stress, Body Battery, SpO₂,
+respirasjon, VO₂-maks, treningsstatus/belastning, treningsberedskap,
+restitusjonstid og kondisjonsalder. Velg periode, kilde og dag; detaljer og
+måleserier er tilgjengelige i utfoldbare felt med paginering.
+Tilgjengelige målinger avhenger av klokke, sensorer og Garmin-konto.
+
+**Historikk:** `healthStartDate` (YYYY-MM-DD) velger første helsedag. Uten dato
+brukes eldste aktivitetsdato. `healthBatchDays` (1–90, standard 30) begrenser
+antall eldre dager per synk; de tre siste dagene oppdateres alltid. Hver synk
+fortsetter med dager som ikke er hentet ennå. Delvise feil prøves igjen uten å
+blokkere videre historikk; tidligere verdier bevares. Innstillingene finnes i
+kildeskjemaet, og synkresultatet viser antall eldre dager som gjenstår.
+Dagene lagres per kilde i `garmin_health` i SQLite/PostgreSQL; tabellen opprettes
+automatisk ved oppstart uten å endre eksisterende aktiviteter.
+
+**Inkrementell synk:** Garmins stabile aktivitets-ID brukes som referanse.
+Endringer i aktivitetssammendraget (inkludert navn) utløser ny import. Første
+synk etter oppgraderingen importerer tidligere Garmin-økter på nytt for å fylle
+nye felt og rette tallene. Endringer som bare berører separate detaljendepunkter
+kan kreve tvunget import (`npm run ingest -- --force`). Hentefeil vises i
+«Datadekning», og eksisterende ekstra målinger bevares ved delvise feil.
 Uten innloggingstoken feiler kilden tydelig; den bruker aldri eksempeldata.
 
-**Aktiviteter uten GPS** (styrketrening, yoga, indoor) inkluderes fortsatt —
-de får sammendragsdata (varighet, puls, kalorier) uten GPS-spor.
+**Beregninger:** Tempo bruker autoritativ Garmin-distanse og bevegelsestid.
+Garmins maks­fart og tid i pulssoner bevares. Appberegnede soner brukes bare når
+Garmin-soner mangler, og merkes tydelig. Nedstigning kopieres aldri fra stigning.
+Årsstatistikken inkluderer kalorier, skritt, total-/pausetid, nedstigning,
+pulssonetid og flere treningsmål. Puls/kadens/effekt/temperatur vektes etter
+bevegelsestid; manglende målinger inngår ikke som null i gjennomsnitt.
+
+**Tester:** `node --test tests/*.test.js` og
+`PYTHONPATH=scripts scripts/garmin_client/.venv/bin/python -m pytest scripts/garmin_client/tests`.
+Installer `pytest` i det virtuelle miljøet for Python-testene.
 
 ## Filformater (parsere)
 
@@ -216,6 +250,8 @@ Ingest cacher `ref + modifiedTime + size` per kilde, så uendrede filer hoppes o
 | `DELETE` | `/api/activities/:id` | Slett lagret økt |
 | `GET` | `/api/routes?type=&from=&to=` | Forenklede ruter (alle turer) for kartet |
 | `GET` | `/api/stats` | Totaler |
+| `GET` | `/api/stats/by-year` | Årsstatistikk med treningsmål og pulssoner |
+| `GET` | `/api/garmin/health?source=&from=&to=` | Lagrede Garmin-helsedager |
 | `GET` | `/api/config` | Utøver, pulssoner, parsere, kart |
 | `GET` | `/api/sources` | Konfigurerte kilder |
 | `POST` | `/api/ingest` `{force?, sourceId?}` | Kjør ingest nå |

@@ -55,6 +55,10 @@ export function createPostgres() {
 
     async init() {
       await pool.query(`CREATE TABLE IF NOT EXISTS activities (${colDefs})`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS garmin_health (
+        source text NOT NULL, date text NOT NULL, data jsonb NOT NULL,
+        PRIMARY KEY (source, date)
+      )`);
       await pool.query(
         'CREATE INDEX IF NOT EXISTS idx_activities_start ON activities(start_time DESC)'
       );
@@ -73,7 +77,7 @@ export function createPostgres() {
       return r.rowCount ? rowToActivity(r.rows[0].data) : null;
     },
 
-    async list({ type, from, to } = {}) {
+    async list({ type, from, to, full = false, metrics = false } = {}) {
       const where = [];
       const params = [];
       if (type) {
@@ -89,11 +93,11 @@ export function createPostgres() {
         where.push(`start_time <= $${params.length}`);
       }
       const sql =
-        `SELECT ${summaryNames.join(', ')} FROM activities` +
+        `SELECT ${full ? 'data' : summaryNames.join(', ') + (metrics ? " , data->'metrics' AS stats_metrics" : '')} FROM activities` +
         (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
         ' ORDER BY start_time DESC';
       const r = await pool.query(sql, params);
-      return r.rows.map(rowToSummary);
+      return r.rows.map(row => full ? rowToActivity(row.data) : { ...rowToSummary(row), ...(metrics ? {metrics: rowToActivity(row.stats_metrics) || {}} : {}) });
     },
 
     async listTracks({ type, from, to } = {}) {
@@ -135,17 +139,22 @@ export function createPostgres() {
     },
 
     async stats() {
-      const r = await pool.query(
-        'SELECT type, distance_m, moving_time_sec, elevation_gain_m FROM activities'
-      );
-      return computeStats(
-        r.rows.map((row) => ({
-          type: row.type,
-          distanceM: Number(row.distance_m) || 0,
-          movingTimeSec: Number(row.moving_time_sec) || 0,
-          elevationGainM: Number(row.elevation_gain_m) || 0,
-        }))
-      );
+      return computeStats(await this.list({ metrics: true }));
+    },
+
+    async upsertHealth(record) {
+      await pool.query(`INSERT INTO garmin_health (source, date, data) VALUES ($1, $2, $3)
+        ON CONFLICT(source, date) DO UPDATE SET data = EXCLUDED.data`,
+        [record.source, record.date, JSON.stringify(record)]);
+    },
+
+    async listHealth({ source, from, to } = {}) {
+      const where = [], params = [];
+      for (const [key, value] of Object.entries({ source, from, to })) {
+        if (value) { params.push(value); where.push(`${key === 'source' ? 'source =' : key === 'from' ? 'date >=' : 'date <='} $${params.length}`); }
+      }
+      const r = await pool.query('SELECT data FROM garmin_health' + (where.length ? ' WHERE ' + where.join(' AND ') : '') + ' ORDER BY date DESC, source', params);
+      return r.rows.map(row => rowToActivity(row.data));
     },
 
     async close() {

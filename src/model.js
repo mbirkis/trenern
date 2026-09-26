@@ -8,6 +8,9 @@ export const ACTIVITY_TYPES = [
   'walking',
   'cycling',
   'skiing',
+  'swimming',
+  'strength',
+  'yoga',
   'other',
 ];
 
@@ -16,6 +19,9 @@ export function normalizeType(raw) {
   if (!raw) return 'other';
   const s = String(raw).toLowerCase().replace(/[\s_-]/g, '');
   if (/(trail).*run|run.*trail/.test(s)) return 'trailrunning';
+  if (/swim|svøm|svom/.test(s)) return 'swimming';
+  if (/strength|weight|styrke/.test(s)) return 'strength';
+  if (/yoga|pilates/.test(s)) return 'yoga';
   if (/run|jog|løp|lop/.test(s)) return 'running';
   if (/hik|fjell|tur|trek|mountain/.test(s)) return 'hiking';
   if (/walk|gå|gange|gange/.test(s)) return 'walking';
@@ -175,6 +181,7 @@ export function timeInZones(track) {
  */
 export function finalizeActivity(partial) {
   const track = (partial.track || []).map((p) => ({
+    ...p,
     lat: p.lat,
     lon: p.lon,
     ele: Number.isFinite(p.ele) ? p.ele : undefined,
@@ -182,7 +189,11 @@ export function finalizeActivity(partial) {
     hr: Number.isFinite(p.hr) ? p.hr : undefined,
   }));
 
+  const samples = partial.samples || track;
   const derived = deriveFromTrack(track);
+  const sampleDerived = deriveFromTrack(samples);
+  derived.avgHr ??= sampleDerived.avgHr;
+  derived.maxHr ??= sampleDerived.maxHr;
   const m = { ...derived };
   // Parser-provided values win over derived ones when present.
   for (const k of [
@@ -194,8 +205,15 @@ export function finalizeActivity(partial) {
     'avgHr',
     'maxHr',
     'avgPaceSecPerKm',
+    'maxSpeedMs',
   ]) {
     if (partial[k] != null && partial[k] !== '') m[k] = partial[k];
+  }
+
+  // Recompute only after authoritative distance and time have been applied.
+  if (partial.avgPaceSecPerKm == null) {
+    m.avgPaceSecPerKm = m.distanceM > 0 && m.movingTimeSec > 0
+      ? m.movingTimeSec / (m.distanceM / 1000) : null;
   }
 
   const start =
@@ -223,7 +241,7 @@ export function finalizeActivity(partial) {
   const hrZones =
     partial.hrZones && partial.hrZones.length
       ? partial.hrZones
-      : timeInZones(track);
+      : timeInZones(samples);
 
   const bounds = [];
   for (const p of track) {
@@ -245,11 +263,11 @@ export function finalizeActivity(partial) {
     movingTimeSec: round(m.movingTimeSec),
     distanceM: round(m.distanceM),
     elevationGainM: round(m.elevationGainM),
-    elevationLossM: round(m.elevationLossM),
+    elevationLossM: partial.parser === 'garminConnect' && partial.elevationLossM == null && !track.some(p => Number.isFinite(p.ele)) ? null : round(m.elevationLossM),
     avgHr: m.avgHr ?? null,
     maxHr: m.maxHr ?? null,
     avgPaceSecPerKm: m.avgPaceSecPerKm ? Math.round(m.avgPaceSecPerKm) : null,
-    maxSpeedMs: derived.maxSpeedMs ?? null,
+    maxSpeedMs: m.maxSpeedMs ?? null,
     steps: numOrNull(partial.steps),
     calories: numOrNull(partial.calories),
     avgCadence: numOrNull(partial.avgCadence),
@@ -258,6 +276,11 @@ export function finalizeActivity(partial) {
     hrRest: restingHr(),
     hrMax: maxHr(),
     hrZones,
+    hrZoneSource: partial.hrZoneSource || 'estimated',
+    metrics: partial.metrics || {},
+    samples,
+    pauseTimeSec: Number.isFinite(m.durationSec) && Number.isFinite(m.movingTimeSec)
+      ? Math.max(0, round(m.durationSec - m.movingTimeSec)) : null,
     extras: partial.extras || {},
     hasTrack: bounds.length > 1,
     track,
@@ -273,6 +296,7 @@ function defaultName(type, start) {
     walking: 'Gåtur',
     cycling: 'Sykkeltur',
     skiing: 'Skitur',
+    swimming: 'Svømmeøkt', strength: 'Styrkeøkt', yoga: 'Yoga',
     other: 'Økt',
   }[type];
   if (!start) return label;

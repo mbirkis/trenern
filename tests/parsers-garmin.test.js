@@ -67,7 +67,7 @@ describe('GarminConnectParser', () => {
     );
     assert.ok(activities.length > 0, 'non-GPS activities should not be dropped');
     const a = activities[0];
-    assert.equal(a.type, 'other'); // strength_training maps to 'other'
+    assert.equal(a.type, 'strength'); // strength_training maps to 'other'
     assert.ok(a.start, 'must have start time');
     assert.ok(!a.hasTrack, 'non-GPS activity should not have track flag');
   });

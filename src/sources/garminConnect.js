@@ -47,7 +47,7 @@ export function createGarminConnectSource(cfg) {
       execFile(
         pythonPath,
         [...pythonArgsBase, ...args],
-        { env, timeout: 90000, maxBuffer: 32 * 1024 * 1024 },
+        { env, timeout: 240000, maxBuffer: 32 * 1024 * 1024 },
         (err, stdout, stderr) => {
           if (err) {
             const msg = stderr?.trim() || err.message;
@@ -94,8 +94,9 @@ export function createGarminConnectSource(cfg) {
       return activities.map((a) => ({
         ref: String(a.activityId),
         name: a.activityName || a.activityType?.typeKey || `Garmin-${a.activityId}`,
-        modifiedTime: a.startTimeGMT || a.startTimeLocal || a.startTime || String(a.beginTimestamp || ''),
+        modifiedTime: `v2:${JSON.stringify(a)}`,
         size: a.distance ?? 0,
+        startDate: (a.startTimeLocal || a.startTimeGMT || a.startTime || '').slice(0, 10) || (a.beginTimestamp ? new Date(a.beginTimestamp).toISOString().slice(0, 10) : null),
         // Store extra metadata for the parser to use without re-fetching
         _garminType: a.activityType?.typeKey || 'unknown',
         _hasPolyline: a.hasPolyline !== false,
@@ -106,6 +107,12 @@ export function createGarminConnectSource(cfg) {
      * Fetch full activity detail incl. GPS track from Garmin Connect.
      * Returns JSON that the garminConnect parser (or genericTrack fallback) can handle.
      */
+    healthStartDate: cfg.healthStartDate || null,
+    healthBatchDays: Math.max(1, Math.min(90, Number(cfg.healthBatchDays) || 30)),
+    async readHealth(date) {
+      return JSON.parse(await this._execPython([...tokenArg(), 'get-health', '--date', date]));
+    },
+
     async readJson(file) {
       const stdout = await this._execPython([
         ...tokenArg(),

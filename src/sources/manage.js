@@ -55,6 +55,8 @@ export function redactSource(cfg) {
   }
   if (cfg.type === 'localFolder') out.path = cfg.path || '';
   if (cfg.type === 'garminConnect') {
+    out.healthStartDate = cfg.healthStartDate || null;
+    out.healthBatchDays = cfg.healthBatchDays || 30;
     // Both current DI token file and legacy OAuth token pair are supported.
     const tokenPath = cfg.tokenFile ? resolvePath(cfg.tokenFile) : tokenFileFor(cfg.id);
     out.hasToken = !!(tokenPath && (
@@ -154,6 +156,16 @@ function validate(input, { existingId } = {}) {
     cfg.tokenFile = `./config/keys/garmin-${id}`;
     cfg.filePattern = null; // not applicable for Garmin — files are API activities
     cfg.recursive = false;  // not applicable
+    cfg.healthStartDate = input.healthStartDate || null;
+    if (cfg.healthStartDate && (!/^\d{4}-\d{2}-\d{2}$/.test(cfg.healthStartDate) ||
+        !Number.isFinite(Date.parse(cfg.healthStartDate)) ||
+        new Date(cfg.healthStartDate).toISOString().slice(0, 10) !== cfg.healthStartDate)) {
+      errors.push('Startdato for helsedata er ugyldig');
+    }
+    cfg.healthBatchDays = Number(input.healthBatchDays ?? 30);
+    if (!Number.isInteger(cfg.healthBatchDays) || cfg.healthBatchDays < 1 || cfg.healthBatchDays > 90) {
+      errors.push('Helsedager per synk må være mellom 1 og 90');
+    }
   }
 
   return { errors, cfg };
@@ -188,7 +200,7 @@ export function updateSource(id, input) {
     (redactSource(prev).hasServiceAccountKey || redactSource(prev).hasApiKey);
 
   const { errors, cfg } = validate(
-    { ...input, id, type: input.type || prev.type, _keepSecret: keepSecret },
+    { ...input, healthStartDate: input.healthStartDate === undefined ? prev.healthStartDate : input.healthStartDate, healthBatchDays: input.healthBatchDays ?? prev.healthBatchDays, id, type: input.type || prev.type, _keepSecret: keepSecret },
     { existingId: id }
   );
   if (errors.length) return { errors };

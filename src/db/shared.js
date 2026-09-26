@@ -63,6 +63,7 @@ export function rowToSummary(row) {
     let v = row[col];
     if (kind === 'json') v = parseJson(v);
     else if (kind === 'bool') v = !!v;
+    else if ((kind === 'int' || kind === 'real') && v != null) v = Number(v);
     out[key] = v ?? null;
   }
   return out;
@@ -84,21 +85,43 @@ function parseJson(v) {
 }
 
 export function computeStats(summaries) {
-  const byType = {};
-  let distance = 0;
-  let duration = 0;
-  let gain = 0;
+  const totals = { count: summaries.length, byType: {}, totalDistanceM: 0,
+    totalMovingTimeSec: 0, totalDurationSec: 0, totalPauseTimeSec: 0,
+    totalElevationGainM: 0, totalElevationLossM: 0, totalCalories: 0, totalSteps: 0,
+    hrZones: {}, coverage: {}, averages: {} };
+  const sums = {}, weights = {};
   for (const a of summaries) {
-    byType[a.type] = (byType[a.type] || 0) + 1;
-    distance += a.distanceM || 0;
-    duration += a.movingTimeSec || 0;
-    gain += a.elevationGainM || 0;
+    totals.byType[a.type] = (totals.byType[a.type] || 0) + 1;
+    for (const [key, field] of Object.entries({ totalDistanceM: 'distanceM',
+      totalMovingTimeSec: 'movingTimeSec', totalDurationSec: 'durationSec',
+      totalElevationGainM: 'elevationGainM', totalElevationLossM: 'elevationLossM',
+      totalCalories: 'calories', totalSteps: 'steps' })) {
+      if (Number.isFinite(a[field])) {
+        totals[key] += a[field];
+        totals.coverage[field] = (totals.coverage[field] || 0) + 1;
+      }
+    }
+    totals.totalPauseTimeSec += Math.max(0, (a.durationSec || 0) - (a.movingTimeSec || 0));
+    for (const z of a.hrZones || []) {
+      totals.hrZones[z.zone] = (totals.hrZones[z.zone] || 0) + (z.seconds || 0);
+    }
+    // Time-weighted means avoid treating short and long sessions equally.
+    for (const field of ['avgHr', 'avgCadence', 'avgPower', 'avgTempC']) {
+      if (Number.isFinite(a[field]) && a.movingTimeSec > 0) {
+        sums[field] = (sums[field] || 0) + a[field] * a.movingTimeSec;
+        weights[field] = (weights[field] || 0) + a.movingTimeSec;
+        totals.coverage[field] = (totals.coverage[field] || 0) + 1;
+      }
+    }
+    for (const [key, value] of Object.entries(a.metrics || {})) {
+      if (!Number.isFinite(value)) continue;
+      const field = `metrics.${key}`;
+      sums[field] = (sums[field] || 0) + value;
+      weights[field] = (weights[field] || 0) + 1;
+      totals.coverage[field] = weights[field];
+    }
   }
-  return {
-    count: summaries.length,
-    byType,
-    totalDistanceM: Math.round(distance),
-    totalMovingTimeSec: Math.round(duration),
-    totalElevationGainM: Math.round(gain),
-  };
+  for (const [field, sum] of Object.entries(sums)) totals.averages[field] = sum / weights[field];
+  for (const key of Object.keys(totals)) if (key.startsWith('total')) totals[key] = Math.round(totals[key]);
+  return totals;
 }

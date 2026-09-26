@@ -3,7 +3,7 @@
 const ZONE_COLORS = ['#8f8f8f', '#45a557', '#f5a623', '#f76b15', '#e5484d'];
 const TYPE_LABELS = {
   running: 'Løping', trailrunning: 'Terrengløp', hiking: 'Fjelltur',
-  walking: 'Gåtur', cycling: 'Sykkel', skiing: 'Ski', other: 'Annet',
+  walking: 'Gåtur', cycling: 'Sykkel', skiing: 'Ski', swimming: 'Svømming', strength: 'Styrke', yoga: 'Yoga', other: 'Annet',
 };
 const TYPE_COLORS = {
   running: '#0072f5', trailrunning: '#8e4ec6', hiking: '#45a557',
@@ -616,12 +616,16 @@ function drawRoute(a) {
 
 function zoneOf(hr, bounds) {
   if (!hr || !bounds || !bounds.length) return null;
-  for (const b of bounds) if (hr < b.maxBpm) return b.zone;
-  return 5;
+  const known = bounds.filter(b => Number.isFinite(b.minBpm) || Number.isFinite(b.maxBpm));
+  if (!known.length) return null;
+  for (const b of known) if (Number.isFinite(b.maxBpm) && hr < b.maxBpm) return b.zone;
+  const lower = known.filter(b => Number.isFinite(b.minBpm) && hr >= b.minBpm);
+  return lower.length ? lower[lower.length - 1].zone : null;
 }
 
 function renderDetail(a) {
   const el = document.getElementById('detail');
+  GarminView.reset();
   if (!a) {
     const n = routes.length;
     el.innerHTML = `<div class="detail-empty">
@@ -634,9 +638,14 @@ function renderDetail(a) {
   const speed = a.maxSpeedMs ? (a.maxSpeedMs * 3.6).toFixed(1) + ' km/t' : '–';
   const metrics = [
     ['Distanse', (a.distanceM / 1000).toFixed(2), 'km'],
-    ['Tid', fmtDuration(a.movingTimeSec), ''],
+    ['I bevegelse', fmtDuration(a.movingTimeSec), ''],
+    ['Total varighet', fmtDuration(a.durationSec), ''],
+    ['Pausetid', a.pauseTimeSec != null ? fmtDuration(a.pauseTimeSec) : '–', ''],
     ['Tempo', pace, '/km'],
     ['Stigning', a.elevationGainM, 'm'],
+    ['Nedstigning', a.elevationLossM ?? '–', 'm'],
+    ['Snitteffekt', a.avgPower ?? '–', 'W'],
+    ['Temperatur', a.avgTempC ?? '–', '°C'],
     ['Snittpuls', a.avgHr || '–', a.avgHr ? 'bpm' : ''],
     ['Makspuls', a.maxHr || '–', a.maxHr ? 'bpm' : ''],
     ['Skritt', a.steps != null ? a.steps.toLocaleString('no') : '–', ''],
@@ -666,8 +675,9 @@ function renderDetail(a) {
     zonesHtml = '<div class="detail-empty">Ingen pulsdata</div>';
   }
 
+  const samples = a.samples || a.track || [];
   const eleSeries = (a.track || []).map((p) => p.ele).filter(Number.isFinite);
-  const hrSeries = (a.track || []).map((p) => p.hr).filter(Number.isFinite);
+  const hrSeries = samples.map((p) => p.hr).filter(Number.isFinite);
   const cumDist = cumulativeDistanceKm(a.track || []);
   const splits = computeSplits(a.track || []);
 
@@ -679,13 +689,19 @@ function renderDetail(a) {
     </h2>
     <div class="sub">${TYPE_LABELS[a.type] || a.type} · ${fmtDateTime(a.start)} · kilde: ${escapeHtml(a.source)}${a.sourceName ? ' / ' + escapeHtml(a.sourceName) : ''}${a.customName ? ' · egendefinert navn' : ''}</div>
     <div class="metric-grid">
+      ${GarminView.metricsHtml(a.metrics)}
       ${metrics.map(([k, v, u]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v} <small>${u}</small></div></div>`).join('')}
     </div>
 
-    <div class="section-title">Pulssoner (${a.hrRest || '?'}–${a.hrMax || '?'} bpm)</div>
+    <div class="section-title">Pulssoner · ${a.hrZoneSource === 'garmin' ? 'Garmin' : 'beregnet fra appens makspuls'}</div>
     <div class="zones">${zonesHtml}</div>
 
-    ${splits.length ? splitsBlock(splits) : ''}
+    ${splits.length ? '<div class="section-title">Beregnet per kilometer</div>' + splitsBlock(splits) : ''}
+    ${Object.entries({cad: ['Kadens', '/min'], speed: ['Fart', 'm/s'], power: ['Effekt', 'W'], temp: ['Temperatur', '°C'], verticalOscillation: ['Vertikal bevegelse', ''], groundContactTime: ['Bakkekontakttid', ''], strideLength: ['Skrittlengde', '']}).map(([key,[title,unit]]) => {
+      const series = samples.map(p => p[key]).filter(Number.isFinite);
+      return series.length > 3 ? chartBlock(title, series, unit) : '';
+    }).join('')}
+    ${a.extras?.garmin ? '<div class="section-title">Alle Garmin-målinger</div>' + GarminView.statusHtml(a.extras.garmin.endpointStatus) + GarminView.tree('garminExtras', a.extras.garmin.garminExtras || {}) + GarminView.tree('Alle målepunkter', samples) + GarminView.tree('Måleenheter', a.extras.metricDescriptors) + GarminView.tree('summaryDTO', Object.fromEntries(Object.entries(a.extras.garmin).filter(([k]) => !['garminExtras', 'endpointStatus'].includes(k)))) : ''}
 
     ${eleSeries.length > 3 ? chartBlock('Høydeprofil', eleSeries, 'm', cumDist) : ''}
     ${hrSeries.length > 3 ? chartBlock('Puls', hrSeries, 'bpm', cumDist) : ''}
@@ -877,7 +893,7 @@ async function pollIngest() {
     if (s.running) setIngestStatus('ingest kjører …', true);
     else if (s.lastResult) {
       const r = s.lastResult;
-      setIngestStatus(`sist synk ${fmtDateTime(r.finishedAt)} · +${r.created} nye`);
+      setIngestStatus(`sist synk ${fmtDateTime(r.finishedAt)} · +${r.created} nye${healthSyncSummary(r)}`);
     }
   } catch (_) {}
   setTimeout(pollIngest, 15000);
@@ -1010,6 +1026,9 @@ function fillSourceForm(s) {
     }
   } else if (s.type === 'localFolder') {
     form.path.value = s.path || '';
+  } else if (s.type === 'garminConnect') {
+    form.healthStartDate.value = s.healthStartDate || '';
+    form.healthBatchDays.value = s.healthBatchDays || 30;
   }
   document.getElementById('sm-form-title').textContent = `Rediger «${s.label || s.id}»`;
   document.getElementById('sm-save').textContent = 'Lagre endringer';
@@ -1032,6 +1051,8 @@ function readSourceForm() {
     serviceAccountKey: g('serviceAccountKey'),
     apiKey: g('apiKey'),
     path: g('path'),
+    healthStartDate: g('healthStartDate'),
+    healthBatchDays: Number(g('healthBatchDays')) || 30,
   };
 }
 
@@ -1133,7 +1154,7 @@ async function renderSourceList() {
           body: JSON.stringify({ sourceId: id }),
         });
         testEl.className = r.errors && r.errors.length ? 'src-test err' : 'src-test ok';
-        testEl.textContent = `+${r.created} nye, ${r.updated} oppdatert` +
+        testEl.textContent = `+${r.created} nye, ${r.updated} oppdatert${healthSyncSummary(r)}` +
           (r.errors && r.errors.length ? ` · ${r.errors.join('; ')}` : '');
         await refresh();
       } catch (e) {
@@ -1183,4 +1204,13 @@ function fmtDateTime(iso) {
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function healthSyncSummary(result) {
+  const health = (result.sources || []).map(s => s.health).filter(Boolean);
+  if (!health.length) return '';
+  const days = health.reduce((n,h) => n + h.imported, 0);
+  const remaining = health.reduce((n,h) => n + h.remaining, 0);
+  const warnings = health.reduce((n,h) => n + h.warnings.length, 0);
+  return ` · ${days} helsedager${remaining ? ` · ${remaining} helsedager gjenstår` : ''}${warnings ? ' · noen helsemålinger kunne ikke hentes' : ''}`;
 }
