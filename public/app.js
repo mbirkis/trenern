@@ -61,6 +61,17 @@ const MAP_PROVIDERS = {
 };
 const DEFAULT_MAP_PROVIDER = 'opentopomap';
 const MAP_PROVIDER_KEY = 'trenern.mapProvider';
+const MAP_MODE_KEY = 'trenern.mapMode';
+
+function getMapMode() {
+  try { return localStorage.getItem(MAP_MODE_KEY) === '3d' ? '3d' : '2d'; }
+  catch (_) { return '2d'; }
+}
+
+function setMapMode(mode) {
+  try { localStorage.setItem(MAP_MODE_KEY, mode); } catch (_) { /* ignore */ }
+}
+
 
 function getMapProvider() {
   try {
@@ -89,6 +100,7 @@ let lastBounds = null;
 function fitMap(bounds) {
   lastBounds = bounds;
   map.fitBounds(bounds);
+  fitTerrainMap(bounds);
 }
 
 /** Vis én av panelene ('list' | 'map' | 'detail') på mobil. */
@@ -100,7 +112,8 @@ function setMobileView(view) {
   if (view === 'map' && map) {
     setTimeout(() => {
       map.invalidateSize();
-      if (lastBounds) map.fitBounds(lastBounds);
+      resizeTerrainMap();
+      if (lastBounds) fitMap(lastBounds);
     }, 0);
   }
 }
@@ -110,11 +123,14 @@ function initMobileNav() {
     b.addEventListener('click', () => setMobileView(b.dataset.view));
   });
   setMobileView('list');
-  MOBILE_Q.addEventListener('change', () => setTimeout(() => map.invalidateSize(), 0));
+  MOBILE_Q.addEventListener('change', () => setTimeout(() => { map.invalidateSize(); resizeTerrainMap(); }, 0));
 }
 
 let map, tileLayer, routeLayer, markerLayer, overviewLayer;
 let activeProvider = null;
+let mapChange = 0;
+let terrainMap = null;
+let terrainActivity = null;
 let legendCtl;
 let activities = [];
 let routes = [];          // [{id,type,name,start,points:[[lat,lon]...]}]
@@ -129,7 +145,7 @@ async function init() {
   routeLayer = L.layerGroup().addTo(map);
   markerLayer = L.layerGroup().addTo(map);
   setTimeout(() => map.invalidateSize(), 0);
-  window.addEventListener('resize', () => map.invalidateSize());
+  window.addEventListener('resize', () => { map.invalidateSize(); resizeTerrainMap(); });
   // Vektorlaget måler seg selv i en animasjonsramme, som ikke kjører når
   // kartet er skjult (mobilfanen står på listen). Sett størrelsen med én
   // gang i stedet, ellers blir GL-lerretet hengende igjen i standard-
@@ -277,21 +293,39 @@ function removeBaseLayer() {
 }
 
 async function applyTileLayer() {
+  const change = ++mapChange;
+  const mode = getMapMode();
   const id = getMapProvider();
   const p = MAP_PROVIDERS[id] || MAP_PROVIDERS[DEFAULT_MAP_PROVIDER];
   activeProvider = id;
 
-  if (p.gl) {
+  if (p.gl || mode === '3d') {
     try {
       await ensureMapLibre();
     } catch (err) {
+      if (change !== mapChange) return;
       console.warn('MapLibre kunne ikke lastes, faller tilbake til raster', err);
+      setMapMode('2d');
+      document.getElementById('map-mode').value = '2d';
+      document.getElementById('map-mode-status').textContent = '3D-kart kunne ikke lastes. Viser vanlig kart.';
       setMapProvider('opentopomap-raster');
       const sel = document.getElementById('map-provider');
       if (sel) sel.value = 'opentopomap-raster';
       return applyTileLayer();
     }
-    if (activeProvider !== id) return;   // brukeren rakk å bytte igjen
+    if (change !== mapChange) return;   // brukeren rakk å bytte igjen
+    if (mode === '3d') {
+      try { showTerrainMap(p); }
+      catch (err) {
+        console.warn('3D-kart kunne ikke opprettes', err);
+        setMapMode('2d');
+        document.getElementById('map-mode').value = '2d';
+        document.getElementById('map-mode-status').textContent = '3D-kart krever WebGL. Viser vanlig kart.';
+        return applyTileLayer();
+      }
+      return;
+    }
+    hideTerrainMap();
     removeBaseLayer();
     map.setMaxZoom(p.maxZoom || 19);
     tileLayer = L.maplibreGL({ style: otmVectorStyle() }).addTo(map);
@@ -317,9 +351,163 @@ async function applyTileLayer() {
     attribution = p.attribution;
     maxZoom = p.maxZoom || 19;
   }
+  hideTerrainMap();
   removeBaseLayer();
   map.setMaxZoom(maxZoom);
   tileLayer = L.tileLayer(url, { maxZoom, attribution }).addTo(map);
+}
+
+/** Standalone MapLibre: GPS and terrain share the same camera and projection. */
+function terrainStyle(provider) {
+  let style;
+  if (provider.gl) style = otmVectorStyle();
+  else {
+    const config = provider.server ? (appConfig?.map || {}) : provider;
+    style = {
+      version: 8,
+      sources: {
+        background: {
+          type: 'raster', tileSize: 256,
+          tiles: [(config.tileUrl || config.url || MAP_PROVIDERS.osm.url).replace('{s}', 'a')],
+          maxzoom: config.maxZoom || 19,
+          attribution: config.attribution || MAP_PROVIDERS.osm.attribution,
+        },
+        dem: {
+          type: 'raster-dem', encoding: 'terrarium', tileSize: 512,
+          tiles: [OTM_DEM_TILES], maxzoom: 15,
+          attribution: 'Terreng: &copy; <a href="https://mapterhorn.com/">mapterhorn</a>',
+        },
+      },
+      layers: [{ id: 'background', type: 'raster', source: 'background' }],
+    };
+  }
+  style.terrain = { source: 'dem', exaggeration: 1 };
+  return style;
+}
+
+function showTerrainMap(provider) {
+  const camera = terrainMap ? {
+    center: terrainMap.getCenter(), zoom: terrainMap.getZoom(),
+    pitch: terrainMap.getPitch(), bearing: terrainMap.getBearing(),
+  } : {
+    center: [map.getCenter().lng, map.getCenter().lat], zoom: map.getZoom(),
+    pitch: 60, bearing: 0,
+  };
+  hideTerrainMap();
+  removeBaseLayer();
+  const host = document.getElementById('map');
+  const container = document.createElement('div');
+  container.id = 'terrain-map';
+  host.appendChild(container);
+  L.DomEvent.disableClickPropagation(container);
+  L.DomEvent.disableScrollPropagation(container);
+  terrainMap = new maplibregl.Map({
+    container, style: terrainStyle(provider), ...camera,
+    maxZoom: provider.maxZoom || 19, maxPitch: 80,
+    attributionControl: true,
+  });
+  host.classList.add('is-3d');
+  const gl = terrainMap;
+  gl.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
+  gl.on('load', () => {
+    if (terrainMap !== gl) return;
+    gl.addSource('gps', { type: 'geojson', data: terrainRouteData() });
+    const lines = ['==', ['geometry-type'], 'LineString'];
+    gl.addLayer({ id: 'gps-outline', type: 'line', source: 'gps', filter: lines,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#102030', 'line-width': 10 } });
+    gl.addLayer({ id: 'gps-route', type: 'line', source: 'gps', filter: lines,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': 5 } });
+    gl.addLayer({ id: 'gps-markers', type: 'circle', source: 'gps',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6,
+        'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    gl.on('click', 'gps-route', (event) => {
+      const id = event.features?.[0]?.properties?.activityId;
+      if (id && !selectedId) selectActivity(id);
+    });
+    gl.on('mouseenter', 'gps-route', () => { gl.getCanvas().style.cursor = 'pointer'; });
+    gl.on('mouseleave', 'gps-route', () => { gl.getCanvas().style.cursor = ''; });
+    gl.on('click', 'gps-markers', (event) => {
+      const feature = event.features?.[0];
+      if (feature) new maplibregl.Popup().setLngLat(feature.geometry.coordinates)
+        .setText(feature.properties.label).addTo(gl);
+    });
+  });
+  gl.on('error', () => {
+    if (terrainMap === gl) document.getElementById('map-mode-status').textContent =
+      'Noen kart- eller terrengdata kunne ikke lastes. Sjekk nettforbindelsen eller velg et annet bakgrunnskart.';
+  });
+  resizeTerrainMap();
+  if (lastBounds) fitTerrainMap(lastBounds);
+}
+
+function hideTerrainMap() {
+  if (terrainMap) {
+    // Keep the camera location when returning to the flat map.
+    const center = terrainMap.getCenter();
+    map.setView([center.lat, center.lng], terrainMap.getZoom());
+    terrainMap.remove();
+    terrainMap = null;
+  }
+  document.getElementById('terrain-map')?.remove();
+  document.getElementById('map').classList.remove('is-3d');
+  map.invalidateSize();
+}
+
+function resizeTerrainMap() { terrainMap?.resize(); }
+
+function fitTerrainMap(bounds) {
+  if (!terrainMap) return;
+  terrainMap.resize();
+  terrainMap.fitBounds([
+    [bounds.getWest(), bounds.getSouth()], [bounds.getEast(), bounds.getNorth()],
+  ], { padding: 45, duration: 0, maxZoom: 16 });
+}
+
+function resetTerrainView() {
+  if (terrainMap) terrainMap.jumpTo({ center: [DEFAULT_VIEW[1], DEFAULT_VIEW[0]], zoom: 5 });
+}
+
+function terrainRouteData() {
+  const features = [];
+  const line = (points, color, activityId) => {
+    if (points.length >= 2) features.push({ type: 'Feature',
+      properties: { color, activityId },
+      geometry: { type: 'LineString', coordinates: points.map(([lat, lon]) => [lon, lat]) } });
+  };
+  if (!terrainActivity) {
+    for (const route of routes) {
+      const points = (route.points || []).filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon));
+      line(points, TYPE_COLORS[route.type] || TYPE_COLORS.other, route.id);
+    }
+  } else {
+    const points = (terrainActivity.track || []).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+    const zones = terrainActivity.hrZones || appConfig?.hrZones || [];
+    let segment = [], zone = null;
+    for (const point of points) {
+      const nextZone = zoneOf(point.hr, zones);
+      segment.push([point.lat, point.lon]);
+      if (segment.length > 1 && nextZone !== zone) {
+        line(segment, zone ? ZONE_COLORS[zone - 1] : '#0072f5', terrainActivity.id);
+        segment = [[point.lat, point.lon]];
+      }
+      zone = nextZone;
+    }
+    line(segment, zone ? ZONE_COLORS[zone - 1] : '#0072f5', terrainActivity.id);
+    if (points.length >= 2) {
+      for (const [point, label, color] of [
+        [points[0], 'Start', '#3fb950'], [points[points.length - 1], 'Slutt', '#e5484d'],
+      ]) features.push({ type: 'Feature', properties: { label, color },
+        geometry: { type: 'Point', coordinates: [point.lon, point.lat] } });
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+function syncTerrainRoutes() {
+  terrainMap?.getSource('gps')?.setData(terrainRouteData());
 }
 
 async function fetchJSON(url, opts) {
@@ -382,6 +570,8 @@ function renderMap() {
 }
 
 function drawOverview() {
+  terrainActivity = null;
+  syncTerrainRoutes();
   routeLayer.clearLayers();
   markerLayer.clearLayers();
   overviewLayer.clearLayers();
@@ -408,7 +598,7 @@ function drawOverview() {
     all.push(...r.points);
   }
   if (all.length) fitMap(L.latLngBounds(all).pad(0.08));
-  else map.setView(DEFAULT_VIEW, 5);
+  else { map.setView(DEFAULT_VIEW, 5); resetTerrainView(); }
 }
 
 function clearSelection() {
@@ -560,12 +750,15 @@ async function selectActivity(id, { focus = true } = {}) {
     document.getElementById('detail').innerHTML = `<div class="detail-empty">Kunne ikke laste økt</div>`;
     return;
   }
+  if (selectedId !== id) return;
   drawRoute(a);
   renderDetail(a);
   if (focus && isMobile()) setMobileView('detail');
 }
 
 function drawRoute(a) {
+  terrainActivity = a;
+  syncTerrainRoutes();
   map.invalidateSize();
   overviewLayer.clearLayers();   // hide all other routes while one is selected
   routeLayer.clearLayers();
@@ -573,7 +766,8 @@ function drawRoute(a) {
   updateLegend(true);
   const pts = (a.track || []).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
   if (pts.length < 2) {
-    map.setView([61.5, 8.5], 5);
+    map.setView(DEFAULT_VIEW, 5);
+    resetTerrainView();
     return;
   }
   const zoneBounds = a.hrZones || (appConfig && appConfig.hrZones) || [];
@@ -948,6 +1142,13 @@ function initSettingsModal() {
   const close = () => { modal.hidden = true; };
 
   initMapProviderSelect();
+  const mode = document.getElementById('map-mode');
+  mode.value = getMapMode();
+  mode.addEventListener('change', () => {
+    setMapMode(mode.value);
+    document.getElementById('map-mode-status').textContent = '';
+    applyTileLayer();
+  });
 
   openBtn.addEventListener('click', async () => {
     modal.hidden = false;

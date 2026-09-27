@@ -47,7 +47,15 @@
 
       <div class="modal-body">
         <section class="settings-section">
-          <h3>Karttjeneste</h3>
+          <h3>Kart</h3>
+          <label>Kartvisning
+            <select id="map-mode" aria-describedby="map-mode-help map-mode-status">
+              <option value="2d">Vanlig kart (2D)</option>
+              <option value="3d">3D-kart med GPS-spor</option>
+            </select>
+          </label>
+          <p id="map-mode-help" class="hint">3D viser GPS-spor over terrenget. Dra med høyre museknapp eller to fingre for å dreie og vippe kartet. Valget huskes i denne nettleseren.</p>
+          <p id="map-mode-status" class="hint" role="status"></p>
           <label>Bakgrunnskart
             <select id="map-provider"></select>
           </label>

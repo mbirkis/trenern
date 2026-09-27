@@ -74,6 +74,14 @@ API-nøkkel fra <https://tracestrack.com/> — legg den i `map.tracestrackKey` e
 miljøvariabelen `TRACESTRACK_KEY`. Uten nøkkel faller kartet tilbake til vanlige
 OpenStreetMap-tiles.
 
+Under **Innstillinger → Kartvisning** kan du velge **Vanlig kart (2D)** eller
+**3D-kart med GPS-spor**. Vanlig kart er standard. 3D-kartet viser terreng med
+høydedata fra Mapterhorn og legger GPS-sporene over terrenget, med turtypefarger
+i oversikten og pulssoner samt start/slutt i detaljvisningen. Bruk kompasset,
+høyre museknapp eller to fingre for å dreie og vippe kartet. Begge visningene
+bruker det valgte bakgrunnskartet. Valget lagres i nettleseren. 3D krever WebGL
+og nettforbindelse for kartfliser og høydedata.
+
 Under **Innstillinger → Bakgrunnskart** kan du bytte kartstil i nettleseren
 (valget lagres lokalt): OpenTopoMap som vektorkart eller rasterfliser,
 Kartverkets Norgeskart (topografisk og gråtone), serverens egen kartstil
