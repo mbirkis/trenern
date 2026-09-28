@@ -337,7 +337,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--accent); }
 main {
   flex: 1;
   display: grid;
-  grid-template-columns: 300px 1fr 380px;
+  grid-template-columns: 300px minmax(0, 1fr) 10px var(--detail-width, 380px);
   min-height: 0;
 }
 
@@ -361,10 +361,32 @@ main {
 .place-tag-status button { margin-left: 6px; padding: 3px 6px; font-size: 11px; }
 .place-tags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
 .place-tags span { font-size: 10px; color: var(--muted); background: var(--panel-3); border-radius: 99px; padding: 2px 6px; }
-body.sidebar-collapsed main { grid-template-columns: 0 minmax(0, 1fr) 380px; }
-body.sidebar-collapsed #sidebar { overflow: hidden; visibility: hidden; }
-#sidebar-expand { position: absolute; top: 12px; left: 12px; z-index: 802; padding: 4px 10px; }
+body.sidebar-collapsed main { grid-template-columns: 42px minmax(0, 1fr) 10px var(--detail-width, 380px); }
+body.sidebar-collapsed #sidebar { overflow: hidden; background: #080808; align-items: center; }
+body.sidebar-collapsed #sidebar > :not(#sidebar-expand) { display: none; }
+#sidebar-expand { width: 32px; height: 32px; margin-top: 10px; padding: 0; font-size: 24px; }
 #sidebar-expand[hidden] { display: none; }
+
+#detail-resize-handle {
+  position: relative;
+  background: var(--panel);
+  cursor: col-resize;
+  touch-action: none;
+}
+#detail-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 3px;
+  width: 4px; height: 40px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: var(--gray-500);
+}
+#detail-resize-handle:hover::after,
+#detail-resize-handle:focus-visible::after,
+body.detail-resizing #detail-resize-handle::after { background: var(--accent); }
+#detail-resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+body.detail-resizing { cursor: col-resize; user-select: none; }
 
 #activity-list { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
 #activity-list li {
@@ -505,11 +527,19 @@ body.sidebar-collapsed #sidebar { overflow: hidden; visibility: hidden; }
   font-variant-numeric: tabular-nums;
 }
 svg.spark { display: block; width: 100%; height: 90px; }
+.chart-time-axis { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; color: var(--faint); font-size: 10px; font-variant-numeric: tabular-nums; }
+.chart-readout { min-height: 16px; margin-top: 6px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .spark { cursor: crosshair; }
+.chart-cursor { stroke: #ffe066; stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; display: none; }
+.chart-dot { fill: #ffe066; stroke: #111; stroke-width: 1.5; pointer-events: none; display: none; }
+.chart.is-hovered .chart-cursor, .chart.is-hovered .chart-dot { display: block; }
 
 .splits .bar-chart { margin: 8px 0 12px; gap: 5px; }
 .splits .bar-row { grid-template-columns: 30px 1fr 56px; gap: 10px; }
 .splits .bar-track { height: 8px; }
 .splits .bar-fill { opacity: 0.95; }
+.splits [data-split-index] { cursor: crosshair; }
+.splits [data-split-index]:hover { color: var(--text); }
 .splits .stats-table { font-size: 12px; }
 .splits .stats-table th, .splits .stats-table td { padding: 6px 8px; }
 .split-fast { color: var(--z2); font-weight: 600; }
@@ -628,8 +658,15 @@ svg.spark { display: block; width: 100%; height: 90px; }
 .mobile-nav { display: none; }
 
 @media (max-width: 900px) {
+  #detail-resize-handle { display: none; }
   body.sidebar-collapsed main { grid-template-columns: 1fr; }
-  body.sidebar-collapsed #sidebar { visibility: visible; overflow: auto; }
+  body.sidebar-collapsed #sidebar { overflow: auto; background: var(--panel); align-items: stretch; }
+  body.sidebar-collapsed #sidebar > .sidebar-head { display: flex; }
+  body.sidebar-collapsed #sidebar .filters { display: grid; }
+  body.sidebar-collapsed #sidebar > #search-count,
+  body.sidebar-collapsed #sidebar > #activity-list,
+  body.sidebar-collapsed #sidebar > #place-tag-status:not([hidden]) { display: block; }
+  body.sidebar-collapsed #sidebar > #search-count:empty { display: none; }
   #sidebar-expand, .sidebar-head button { display: none; }
   :root { --header-h: auto; }
 

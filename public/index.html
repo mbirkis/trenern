@@ -163,6 +163,7 @@
 
   <main>
     <aside id="sidebar">
+      <button id="sidebar-expand" class="ghost" type="button" aria-label="Vis turlisten" title="Vis turlisten" hidden>›</button>
       <div class="sidebar-head">
         <strong>Turer</strong>
         <button id="sidebar-collapse" class="ghost" type="button" aria-label="Skjul turlisten" title="Skjul turlisten">‹</button>
@@ -178,7 +179,11 @@
       <ul id="activity-list"></ul>
     </aside>
 
-    <section id="map"><button id="sidebar-expand" class="ghost" type="button" aria-label="Vis turlisten" title="Vis turlisten" hidden>☰ <span>Turer</span></button></section>
+    <section id="map"></section>
+
+    <div id="detail-resize-handle" role="separator" tabindex="0" aria-orientation="vertical"
+      aria-label="Juster bredden på statistikkpanelet" aria-controls="detail"
+      aria-valuemin="280" aria-valuenow="380" title="Dra for å justere statistikkpanelet. Bruk piltastene for finjustering."></div>
 
     <aside id="detail">
       <div class="detail-empty">Velg en økt fra listen</div>

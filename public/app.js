@@ -63,6 +63,11 @@ const DEFAULT_MAP_PROVIDER = 'opentopomap';
 const MAP_PROVIDER_KEY = 'trenern.mapProvider';
 const MAP_MODE_KEY = 'trenern.mapMode';
 const SIDEBAR_KEY = 'trenern.sidebarCollapsed';
+const DETAIL_WIDTH_KEY = 'trenern.detailWidth';
+const MIN_DETAIL_WIDTH = 280;
+const MIN_MAP_WIDTH = 260;
+let preferredDetailWidth = 380;
+let detailResizeFrame = null;
 
 function getMapMode() {
   try { return localStorage.getItem(MAP_MODE_KEY) === '3d' ? '3d' : '2d'; }
@@ -128,6 +133,8 @@ function initMobileNav() {
 }
 
 let map, tileLayer, routeLayer, markerLayer, overviewLayer;
+let chartHoverMarker = null;
+let chartHoverPoint = null;
 let activeProvider = null;
 let mapChange = 0;
 let terrainMap = null;
@@ -146,7 +153,11 @@ async function init() {
   routeLayer = L.layerGroup().addTo(map);
   markerLayer = L.layerGroup().addTo(map);
   setTimeout(() => map.invalidateSize(), 0);
-  window.addEventListener('resize', () => { map.invalidateSize(); resizeTerrainMap(); });
+  window.addEventListener('resize', () => {
+    setDetailWidth(preferredDetailWidth);
+    map.invalidateSize();
+    resizeTerrainMap();
+  });
   // Vektorlaget måler seg selv i en animasjonsramme, som ikke kjører når
   // kartet er skjult (mobilfanen står på listen). Sett størrelsen med én
   // gang i stedet, ellers blir GL-lerretet hengende igjen i standard-
@@ -155,6 +166,7 @@ async function init() {
 
   document.getElementById('sync-btn').addEventListener('click', sync);
   initMobileNav();
+  initDetailResize();
   document.getElementById('type-filter').addEventListener('change', onFilterChange);
   document.getElementById('activity-search').addEventListener('input', onSearchChange);
   let collapsed = false;
@@ -188,7 +200,80 @@ function setSidebarCollapsed(collapsed) {
   document.body.classList.toggle('sidebar-collapsed', collapsed);
   document.getElementById('sidebar-expand').hidden = !collapsed;
   try { localStorage.setItem(SIDEBAR_KEY, String(collapsed)); } catch (_) {}
+  setDetailWidth(preferredDetailWidth);
   setTimeout(() => { map.invalidateSize(); resizeTerrainMap(); }, 0);
+}
+
+function clampDetailWidth(requested, mainWidth, sidebarWidth, handleWidth) {
+  const max = Math.max(MIN_DETAIL_WIDTH,
+    Math.floor(mainWidth - sidebarWidth - handleWidth - MIN_MAP_WIDTH));
+  const value = Number.isFinite(requested) ? requested : 380;
+  return { width: Math.min(max, Math.max(MIN_DETAIL_WIDTH, Math.round(value))), max };
+}
+
+function setDetailWidth(requested, remember = false) {
+  const main = document.querySelector('main');
+  const handle = document.getElementById('detail-resize-handle');
+  const sidebar = document.getElementById('sidebar');
+  const { width, max } = clampDetailWidth(
+    requested, main.clientWidth, sidebar.getBoundingClientRect().width, handle.offsetWidth
+  );
+  main.style.setProperty('--detail-width', `${width}px`);
+  handle.setAttribute('aria-valuemax', String(max));
+  handle.setAttribute('aria-valuenow', String(width));
+  handle.setAttribute('aria-valuetext', `${width} piksler`);
+  if (remember) {
+    preferredDetailWidth = width;
+    try { localStorage.setItem(DETAIL_WIDTH_KEY, String(width)); } catch (_) {}
+  }
+  if (!detailResizeFrame) detailResizeFrame = requestAnimationFrame(() => {
+    detailResizeFrame = null;
+    map.invalidateSize({ pan: false });
+    resizeTerrainMap();
+  });
+  return width;
+}
+
+function initDetailResize() {
+  const handle = document.getElementById('detail-resize-handle');
+  let saved;
+  try { saved = Number(localStorage.getItem(DETAIL_WIDTH_KEY)); } catch (_) {}
+  if (Number.isFinite(saved) && saved >= MIN_DETAIL_WIDTH) preferredDetailWidth = saved;
+  setDetailWidth(preferredDetailWidth);
+  let dragging = null;
+  handle.addEventListener('pointerdown', (event) => {
+    if (isMobile() || event.button !== 0) return;
+    dragging = event.pointerId;
+    handle.setPointerCapture(event.pointerId);
+    document.body.classList.add('detail-resizing');
+    event.preventDefault();
+  });
+  handle.addEventListener('pointermove', (event) => {
+    if (dragging !== event.pointerId) return;
+    const main = document.querySelector('main');
+    setDetailWidth(main.getBoundingClientRect().right - event.clientX - handle.offsetWidth / 2);
+  });
+  const endDrag = (event) => {
+    if (dragging !== event.pointerId) return;
+    dragging = null;
+    document.body.classList.remove('detail-resizing');
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    if (event.type === 'pointercancel') setDetailWidth(preferredDetailWidth);
+    else setDetailWidth(Number.parseFloat(document.querySelector('main').style.getPropertyValue('--detail-width')), true);
+  };
+  handle.addEventListener('pointerup', endDrag);
+  handle.addEventListener('pointercancel', endDrag);
+  handle.addEventListener('keydown', (event) => {
+    const current = Number(handle.getAttribute('aria-valuenow'));
+    const maximum = Number(handle.getAttribute('aria-valuemax'));
+    const next = event.key === 'ArrowLeft' ? current + 24
+      : event.key === 'ArrowRight' ? current - 24
+      : event.key === 'Home' ? MIN_DETAIL_WIDTH
+      : event.key === 'End' ? maximum : null;
+    if (next == null) return;
+    event.preventDefault();
+    setDetailWidth(next, true);
+  });
 }
 
 /* ------------------------------------------------------------------
@@ -436,6 +521,7 @@ function showTerrainMap(provider) {
   gl.on('load', () => {
     if (terrainMap !== gl) return;
     gl.addSource('gps', { type: 'geojson', data: terrainRouteData() });
+    gl.addSource('chart-hover', { type: 'geojson', data: chartHoverGeoJSON() });
     const lines = ['==', ['geometry-type'], 'LineString'];
     gl.addLayer({ id: 'gps-outline', type: 'line', source: 'gps', filter: lines,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
@@ -447,6 +533,9 @@ function showTerrainMap(provider) {
       filter: ['==', ['geometry-type'], 'Point'],
       paint: { 'circle-color': ['get', 'color'], 'circle-radius': 6,
         'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    gl.addLayer({ id: 'chart-hover-marker', type: 'circle', source: 'chart-hover',
+      paint: { 'circle-color': '#ffe066', 'circle-radius': 9,
+        'circle-stroke-color': '#111', 'circle-stroke-width': 3 } });
     gl.on('click', 'gps-route', (event) => {
       const id = event.features?.[0]?.properties?.activityId;
       if (id && !selectedId) selectActivity(id);
@@ -529,6 +618,17 @@ function terrainRouteData() {
     }
   }
   return { type: 'FeatureCollection', features };
+}
+
+function chartHoverGeoJSON() {
+  return { type: 'FeatureCollection', features: chartHoverPoint ? [{
+    type: 'Feature', properties: {},
+    geometry: { type: 'Point', coordinates: [chartHoverPoint.lon, chartHoverPoint.lat] },
+  }] : [] };
+}
+
+function syncChartHover3D() {
+  terrainMap?.getSource('chart-hover')?.setData(chartHoverGeoJSON());
 }
 
 function syncTerrainRoutes() {
@@ -616,6 +716,7 @@ function renderMap() {
 }
 
 function drawOverview() {
+  clearChartHover();
   terrainActivity = null;
   syncTerrainRoutes();
   routeLayer.clearLayers();
@@ -806,6 +907,7 @@ async function selectActivity(id, { focus = true } = {}) {
 }
 
 function drawRoute(a) {
+  clearChartHover();
   terrainActivity = a;
   syncTerrainRoutes();
   map.invalidateSize();
@@ -868,6 +970,7 @@ function zoneOf(hr, bounds) {
 
 function renderDetail(a) {
   const el = document.getElementById('detail');
+  clearChartHover();
   GarminView.reset();
   if (!a) {
     const n = routes.length;
@@ -878,23 +981,24 @@ function renderDetail(a) {
     return;
   }
   const pace = a.avgPaceSecPerKm ? fmtPace(a.avgPaceSecPerKm) : '–';
-  const speed = a.maxSpeedMs ? (a.maxSpeedMs * 3.6).toFixed(1) + ' km/t' : '–';
+  const avgSpeedMs = a.distanceM > 0 && a.movingTimeSec > 0
+    ? a.distanceM / a.movingTimeSec : a.metrics?.avgSpeedMs;
+  const samples = a.samples?.length ? a.samples : a.track || [];
+  const minSampleHr = samples.reduce((min, p) => Number.isFinite(p.hr) && p.hr > 0
+    ? Math.min(min, p.hr) : min, Infinity);
+  const minHr = a.metrics?.minHr > 0 ? a.metrics.minHr : Number.isFinite(minSampleHr) ? minSampleHr : null;
   const metrics = [
-    ['Distanse', (a.distanceM / 1000).toFixed(2), 'km'],
-    ['I bevegelse', fmtDuration(a.movingTimeSec), ''],
-    ['Total varighet', fmtDuration(a.durationSec), ''],
-    ['Pausetid', a.pauseTimeSec != null ? fmtDuration(a.pauseTimeSec) : '–', ''],
+    ['Distanse', a.distanceM != null ? (a.distanceM / 1000).toFixed(2) : '–', 'km'],
     ['Tempo', pace, '/km'],
-    ['Stigning', a.elevationGainM, 'm'],
-    ['Nedstigning', a.elevationLossM ?? '–', 'm'],
-    ['Snitteffekt', a.avgPower ?? '–', 'W'],
-    ['Temperatur', a.avgTempC ?? '–', '°C'],
+    ['Maksfart', a.maxSpeedMs != null ? (a.maxSpeedMs * 3.6).toFixed(1) : '–', 'km/t'],
+    ['Snittfart', Number.isFinite(avgSpeedMs) ? (avgSpeedMs * 3.6).toFixed(1) : '–', 'km/t'],
+    ['Kalorier', a.calories != null ? Math.round(a.calories) : '–', a.calories != null ? 'kcal' : ''],
     ['Snittpuls', a.avgHr || '–', a.avgHr ? 'bpm' : ''],
+    ['Laveste puls', minHr ?? '–', minHr != null ? 'bpm' : ''],
     ['Makspuls', a.maxHr || '–', a.maxHr ? 'bpm' : ''],
     ['Skritt', a.steps != null ? a.steps.toLocaleString('no') : '–', ''],
-    ['Kalorier', a.calories != null ? Math.round(a.calories) : '–', a.calories != null ? 'kcal' : ''],
-    ['Kadens', a.avgCadence != null ? Math.round(a.avgCadence) : '–', ''],
-    ['Maksfart', speed, ''],
+    ['Tid i bevegelse', a.movingTimeSec != null ? fmtDuration(a.movingTimeSec) : '–', ''],
+    ['Totaltid', a.durationSec != null ? fmtDuration(a.durationSec) : '–', ''],
   ];
 
   const totalZ = (a.hrZones || []).reduce((s, z) => s + (z.seconds || 0), 0);
@@ -918,10 +1022,15 @@ function renderDetail(a) {
     zonesHtml = '<div class="detail-empty">Ingen pulsdata</div>';
   }
 
-  const samples = a.samples || a.track || [];
-  const eleSeries = (a.track || []).map((p) => p.ele).filter(Number.isFinite);
-  const hrSeries = samples.map((p) => p.hr).filter(Number.isFinite);
-  const cumDist = cumulativeDistanceKm(a.track || []);
+  const chartDefs = [];
+  const addChart = (title, source, field, unit) => {
+    const series = source.filter((p) => Number.isFinite(p[field])).map((p) => ({
+      value: p[field], t: p.t, lat: p.lat, lon: p.lon,
+    }));
+    if (series.length <= 3) return '';
+    const index = chartDefs.push({ title, unit, series }) - 1;
+    return chartBlock(title, series, unit, index);
+  };
   const splits = computeSplits(a.track || []);
 
   el.innerHTML = `
@@ -933,45 +1042,71 @@ function renderDetail(a) {
     <div class="sub">${TYPE_LABELS[a.type] || a.type} · ${fmtDateTime(a.start)} · kilde: ${escapeHtml(a.source)}${a.sourceName ? ' / ' + escapeHtml(a.sourceName) : ''}${a.customName ? ' · egendefinert navn' : ''}</div>
     ${(a.placeTags || []).length ? `<div class="detail-place-tags"><div class="section-title">Steder langs ruten</div><div class="place-tags">${a.placeTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div></div>` : ''}
     <div class="metric-grid">
-      ${GarminView.metricsHtml(a.metrics)}
       ${metrics.map(([k, v, u]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v} <small>${u}</small></div></div>`).join('')}
     </div>
+
+    ${addChart('Høydeprofil', a.track || [], 'ele', 'm')}
+    ${addChart('Puls', samples, 'hr', 'bpm')}
 
     <div class="section-title">Pulssoner · ${a.hrZoneSource === 'garmin' ? 'Garmin' : 'beregnet fra appens makspuls'}</div>
     <div class="zones">${zonesHtml}</div>
 
     ${splits.length ? '<div class="section-title">Beregnet per kilometer</div>' + splitsBlock(splits) : ''}
     ${Object.entries({cad: ['Kadens', '/min'], speed: ['Fart', 'm/s'], power: ['Effekt', 'W'], temp: ['Temperatur', '°C'], verticalOscillation: ['Vertikal bevegelse', ''], groundContactTime: ['Bakkekontakttid', ''], strideLength: ['Skrittlengde', '']}).map(([key,[title,unit]]) => {
-      const series = samples.map(p => p[key]).filter(Number.isFinite);
-      return series.length > 3 ? chartBlock(title, series, unit) : '';
+      return addChart(title, samples, key, unit);
     }).join('')}
     ${a.extras?.garmin ? '<div class="section-title">Alle Garmin-målinger</div>' + GarminView.statusHtml(a.extras.garmin.endpointStatus) + GarminView.tree('garminExtras', a.extras.garmin.garminExtras || {}) + GarminView.tree('Alle målepunkter', samples) + GarminView.tree('Måleenheter', a.extras.metricDescriptors) + GarminView.tree('summaryDTO', Object.fromEntries(Object.entries(a.extras.garmin).filter(([k]) => !['garminExtras', 'endpointStatus'].includes(k)))) : ''}
-
-    ${eleSeries.length > 3 ? chartBlock('Høydeprofil', eleSeries, 'm', cumDist) : ''}
-    ${hrSeries.length > 3 ? chartBlock('Puls', hrSeries, 'bpm', cumDist) : ''}
   `;
   el.scrollTop = 0;
   const back = document.getElementById('back-to-all');
   if (back) back.addEventListener('click', clearSelection);
   const rn = document.getElementById('rename-act');
   if (rn) rn.addEventListener('click', () => renameActivity(a));
+  bindChartHover(el, chartDefs, a.track || []);
+  bindSplitHover(el, splits, a.track || []);
 }
 
-function chartBlock(title, series, unit, xKm) {
-  const min = Math.min(...series), max = Math.max(...series);
-  return `<div class="chart">
-    <div class="caption"><span>${title}</span><span>${Math.round(min)}–${Math.round(max)} ${unit}${xKm ? ' · ' + xKm.toFixed(1) + ' km' : ''}</span></div>
-    ${sparkline(series)}
+function chartFractions(series) {
+  const first = series[0]?.t;
+  const last = series.at(-1)?.t;
+  const timed = Number.isFinite(first) && Number.isFinite(last) && last > first &&
+    series.every((p, i) => Number.isFinite(p.t) && (i === 0 || p.t >= series[i - 1].t));
+  return {
+    timed,
+    fractions: series.map((p, i) => timed ? (p.t - first) / (last - first) : i / (series.length - 1)),
+  };
+}
+
+function fmtGraphTime(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function chartBlock(title, series, unit, index) {
+  const values = series.map((p) => p.value);
+  const min = values.reduce((a, b) => Math.min(a, b), Infinity);
+  const max = values.reduce((a, b) => Math.max(a, b), -Infinity);
+  const { timed, fractions } = chartFractions(series);
+  const start = timed ? fmtGraphTime(series[0].t) : '–';
+  const middle = timed ? fmtGraphTime((series[0].t + series.at(-1).t) / 2) : 'Tid ikke tilgjengelig';
+  const end = timed ? fmtGraphTime(series.at(-1).t) : '–';
+  return `<div class="chart" data-chart-index="${index}">
+    <div class="caption"><span>${title}</span><span>${Math.round(min)}–${Math.round(max)} ${unit}</span></div>
+    ${sparkline(values, fractions)}
+    <div class="chart-time-axis" aria-label="Tid fra øktstart"><span>${start}</span><span>${middle}</span><span>${end}</span></div>
+    <div class="chart-readout" aria-live="off">Hold over grafen for verdi og sted på kartet</div>
   </div>`;
 }
 
-function sparkline(series) {
+function sparkline(series, fractions = series.map((_, i) => i / (series.length - 1))) {
   const W = 320, H = 90, pad = 4;
-  const n = series.length;
-  const min = Math.min(...series), max = Math.max(...series);
+  const min = series.reduce((a, b) => Math.min(a, b), Infinity);
+  const max = series.reduce((a, b) => Math.max(a, b), -Infinity);
   const span = max - min || 1;
   const pts = series.map((v, i) => {
-    const x = pad + (i / (n - 1)) * (W - 2 * pad);
+    const x = pad + fractions[i] * (W - 2 * pad);
     const y = H - pad - ((v - min) / span) * (H - 2 * pad);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
@@ -979,20 +1114,110 @@ function sparkline(series) {
   return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
     <polygon points="${area}" fill="#5ab1ff22" />
     <polyline points="${pts}" fill="none" stroke="#5ab1ff" stroke-width="1.5" />
+    <line class="chart-cursor" x1="0" x2="0" y1="4" y2="86" />
+    <circle class="chart-dot" cx="0" cy="0" r="4" />
   </svg>`;
 }
 
-function cumulativeDistanceKm(track) {
-  let d = 0;
-  const R = 6371000, rad = (x) => x * Math.PI / 180;
-  const pts = track.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1], b = pts[i];
-    const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
-    const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
-    d += 2 * R * Math.asin(Math.sqrt(s));
+function nearestSeriesIndex(fractions, x) {
+  let lo = 0, hi = fractions.length - 1;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fractions[mid] < x) lo = mid + 1;
+    else hi = mid;
   }
-  return d / 1000;
+  return lo > 0 && Math.abs(fractions[lo - 1] - x) <= Math.abs(fractions[lo] - x) ? lo - 1 : lo;
+}
+
+function chartTrackPoint(track, sample) {
+  if (Number.isFinite(sample.lat) && Number.isFinite(sample.lon)) return sample;
+  if (!Number.isFinite(sample.t)) return null;
+  let closest = null, gap = Infinity;
+  for (const point of track) {
+    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon) || !Number.isFinite(point.t)) continue;
+    const delta = Math.abs(point.t - sample.t);
+    if (delta < gap) { closest = point; gap = delta; }
+  }
+  return closest;
+}
+
+function clearChartHover() {
+  if (chartHoverMarker && markerLayer) markerLayer.removeLayer(chartHoverMarker);
+  chartHoverMarker = null;
+  if (chartHoverPoint) {
+    chartHoverPoint = null;
+    syncChartHover3D();
+  }
+}
+
+function showChartHover(point) {
+  if (!point) { clearChartHover(); return; }
+  chartHoverPoint = point;
+  if (!chartHoverMarker) {
+    chartHoverMarker = L.circleMarker([point.lat, point.lon], {
+      radius: 9, color: '#111', weight: 3, fillColor: '#ffe066', fillOpacity: 1,
+      interactive: false,
+    }).addTo(markerLayer);
+  } else {
+    chartHoverMarker.setLatLng([point.lat, point.lon]);
+  }
+  syncChartHover3D();
+}
+
+function bindChartHover(detail, chartDefs, track) {
+  detail.querySelectorAll('[data-chart-index]').forEach((chart) => {
+    const { series, unit } = chartDefs[Number(chart.dataset.chartIndex)];
+    const { fractions } = chartFractions(series);
+    const svg = chart.querySelector('svg');
+    const cursor = chart.querySelector('.chart-cursor');
+    const dot = chart.querySelector('.chart-dot');
+    const readout = chart.querySelector('.chart-readout');
+    const min = series.reduce((v, p) => Math.min(v, p.value), Infinity);
+    const max = series.reduce((v, p) => Math.max(v, p.value), -Infinity);
+    svg.addEventListener('pointermove', (event) => {
+      const bounds = svg.getBoundingClientRect();
+      if (!bounds.width) return;
+      const fraction = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+      const i = nearestSeriesIndex(fractions, fraction);
+      const point = series[i];
+      const x = 4 + fractions[i] * 312;
+      const y = 86 - ((point.value - min) / (max - min || 1)) * 82;
+      cursor.setAttribute('x1', x); cursor.setAttribute('x2', x);
+      dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+      chart.classList.add('is-hovered');
+      readout.textContent = `${Number(point.value.toFixed(1))} ${unit}${Number.isFinite(point.t) ? ` · ${fmtGraphTime(point.t)} fra start` : ''}`;
+      showChartHover(chartTrackPoint(track, point));
+    });
+    svg.addEventListener('pointerleave', () => {
+      chart.classList.remove('is-hovered');
+      readout.textContent = 'Hold over grafen for verdi og sted på kartet';
+      clearChartHover();
+    });
+  });
+}
+
+function trackPointAtDistance(track, targetM) {
+  const points = track.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon) && Number.isFinite(p.t));
+  if (!points.length) return null;
+  let covered = 0;
+  for (let i = 1; i < points.length; i++) {
+    const length = distMeters(points[i - 1], points[i]);
+    if (covered + length >= targetM) {
+      const share = length ? (targetM - covered) / length : 0;
+      return { lat: points[i - 1].lat + (points[i].lat - points[i - 1].lat) * share,
+        lon: points[i - 1].lon + (points[i].lon - points[i - 1].lon) * share };
+    }
+    covered += length;
+  }
+  return points.at(-1);
+}
+
+function bindSplitHover(detail, splits, track) {
+  detail.querySelectorAll('[data-split-index]').forEach((row) => {
+    const split = splits[Number(row.dataset.splitIndex)];
+    row.addEventListener('pointerenter', () => showChartHover(trackPointAtDistance(track, split.midDistanceM)));
+    row.addEventListener('pointerleave', clearChartHover);
+  });
 }
 
 function distMeters(a, b) {
@@ -1051,6 +1276,7 @@ function computeSplits(track, intervalM = 1000) {
     }
     splits.push({
       index: k + 1,
+      midDistanceM: (dStart + dEnd) / 2,
       distanceM: dist,
       timeSec,
       paceSecPerKm: timeSec / (dist / 1000),
@@ -1067,27 +1293,27 @@ function splitsBlock(splits) {
   const span = max - min || 1;
   const hasHr = splits.some((s) => s.avgHr != null);
 
-  const bars = splits.map((s) => {
+  const bars = splits.map((s, i) => {
     const norm = (s.paceSecPerKm - min) / span;   // 0 = raskest, 1 = tregest
     const w = 12 + 88 * norm;
     const hue = 140 - 140 * norm;                  // grønn → rød
     const tag = s.paceSecPerKm === min ? ' split-fast'
       : s.paceSecPerKm === max ? ' split-slow' : '';
     const label = s.partial ? (s.distanceM / 1000).toFixed(2) : String(s.index);
-    return `<div class="bar-row">
+    return `<div class="bar-row" data-split-index="${i}">
       <span class="bar-label${tag}">${label}</span>
       <span class="bar-track"><span class="bar-fill" style="width:${w.toFixed(1)}%;background:hsl(${hue.toFixed(0)} 62% 52%)"></span></span>
       <span class="bar-value">${fmtPace(s.paceSecPerKm)}</span>
     </div>`;
   }).join('');
 
-  const rows = splits.map((s) => {
+  const rows = splits.map((s, i) => {
     const label = s.partial
       ? `${(s.distanceM / 1000).toFixed(2)} km`
       : `Km ${s.index}`;
     const tag = s.paceSecPerKm === min ? ' split-fast'
       : s.paceSecPerKm === max ? ' split-slow' : '';
-    return `<tr>
+    return `<tr data-split-index="${i}">
       <td class="yr${tag}">${label}</td>
       <td>${fmtDuration(s.timeSec)}</td>
       <td>${fmtPace(s.paceSecPerKm)}</td>
