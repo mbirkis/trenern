@@ -5,6 +5,7 @@ import { buildSources } from './sources/index.js';
 import { parseDocument } from './parsers/index.js';
 import * as store from './store.js';
 import { healthDates, mergeHealth } from './healthSync.js';
+import { startPlaceTagging } from './placeTags.js';
 
 const CACHE_FILE = path.join(config.paths.cache, 'ingest-cache.json');
 
@@ -82,6 +83,10 @@ export async function runIngest(opts = {}) {
                 a.customName = existing.customName;
                 a.name = existing.customName;
               }
+              if (existing?.placeTagsStatus === 'done') {
+                a.placeTags = existing.placeTags || [];
+                a.placeTagsStatus = 'done';
+              }
               const outcome = await store.upsert(a);
               if (outcome === 'created') result.created++;
               else result.updated++;
@@ -148,7 +153,9 @@ export function startScheduler() {
   if (!mins || mins <= 0) return;
   if (timer) clearInterval(timer);
   timer = setInterval(() => {
-    runIngest().catch((e) => console.error('planlagt ingest feilet:', e.message));
+    runIngest()
+      .then(() => startPlaceTagging())
+      .catch((e) => console.error('planlagt ingest feilet:', e.message));
   }, mins * 60 * 1000);
   timer.unref?.();
 }

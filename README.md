@@ -97,6 +97,14 @@ Alle turer tegnes på kartet samtidig (farget etter turtype). Velger du én tur 
 i listen eller ved å klikke ruta — skjules de andre, og ruta farges etter
 pulssone. «← Alle turer» i detaljpanelet tar deg tilbake til oversikten.
 
+Turlisten kan skjules med pilen øverst og åpnes igjen fra kartet. Søkefeltet
+filtrerer både listen og kartet etter aktivitetsnavn og stedstagger. For turer
+med GPS-spor i Norge hentes flere stedsnavn langs ruta automatisk fra
+[Kartverkets stedsnavn-API](https://kartverket.no/en/api-and-data/stedsnavndata/brukarrettleiing-stadnamn-api).
+Navnene lagres på økten og beholdes ved synkronisering. Innendørsøkter og ruter
+utenfor Norge får ingen automatiske stedstagger. Hvis tjenesten er utilgjengelig,
+vises «Prøv igjen» i turlisten.
+
 Env-overstyring: `PORT`, `HOST`, `TRENERN_CONFIG` (alternativ config-sti),
 `TRACESTRACK_KEY`,
 `DATABASE_URL` (setter Postgres-backend), `TRENERN_SQLITE_FILE`,

@@ -14,6 +14,7 @@ import { listParsers } from './parsers/index.js';
 import { runIngest, ingestStatus, startScheduler } from './ingest.js';
 import { computeStats } from './db/shared.js';
 import { hrZoneBounds } from './model.js';
+import { placeTagStatus, startPlaceTagging } from './placeTags.js';
 
 const app = express();
 app.use(express.json({ limit: '20mb' }));
@@ -107,6 +108,12 @@ app.get('/api/activities', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+app.get('/api/place-tags/status', (_req, res) => res.json(placeTagStatus()));
+app.post('/api/place-tags/retry', (_req, res) => {
+  startPlaceTagging().catch((e) => console.error('Stedsnavn-feil:', e));
+  res.json({ started: true });
 });
 
 app.get('/api/stats', async (_req, res, next) => {
@@ -203,6 +210,7 @@ app.post('/api/ingest', async (req, res) => {
   const { force, sourceId } = req.body || {};
   try {
     const result = await runIngest({ force: !!force, sourceId });
+    startPlaceTagging().catch((e) => console.error('Stedsnavn-feil:', e));
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -236,6 +244,7 @@ async function main() {
         console.error('oppstarts-ingest feilet:', e.message);
       }
     }
+    startPlaceTagging().catch((e) => console.error('Stedsnavn-feil:', e));
   });
 }
 

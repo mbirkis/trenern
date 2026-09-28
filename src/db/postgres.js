@@ -55,6 +55,7 @@ export function createPostgres() {
 
     async init() {
       await pool.query(`CREATE TABLE IF NOT EXISTS activities (${colDefs})`);
+      await pool.query('ALTER TABLE activities ADD COLUMN IF NOT EXISTS place_tags jsonb');
       await pool.query(`CREATE TABLE IF NOT EXISTS garmin_health (
         source text NOT NULL, date text NOT NULL, data jsonb NOT NULL,
         PRIMARY KEY (source, date)

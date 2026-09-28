@@ -35,6 +35,7 @@ export const COLUMNS = [
   ['has_track', 'hasTrack', 'bool'],
   ['ingested_at', 'ingestedAt', 'text'],
   ['hr_zones', 'hrZones', 'json'],
+  ['place_tags', 'placeTags', 'json'],
   ['data', null, 'json'], // full activity object
 ];
 

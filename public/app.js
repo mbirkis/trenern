@@ -62,6 +62,7 @@ const MAP_PROVIDERS = {
 const DEFAULT_MAP_PROVIDER = 'opentopomap';
 const MAP_PROVIDER_KEY = 'trenern.mapProvider';
 const MAP_MODE_KEY = 'trenern.mapMode';
+const SIDEBAR_KEY = 'trenern.sidebarCollapsed';
 
 function getMapMode() {
   try { return localStorage.getItem(MAP_MODE_KEY) === '3d' ? '3d' : '2d'; }
@@ -155,6 +156,21 @@ async function init() {
   document.getElementById('sync-btn').addEventListener('click', sync);
   initMobileNav();
   document.getElementById('type-filter').addEventListener('change', onFilterChange);
+  document.getElementById('activity-search').addEventListener('input', onSearchChange);
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_KEY) === 'true'; } catch (_) {}
+  setSidebarCollapsed(collapsed);
+  document.getElementById('sidebar-collapse').addEventListener('click', () => setSidebarCollapsed(true));
+  document.getElementById('sidebar-expand').addEventListener('click', () => setSidebarCollapsed(false));
+  document.getElementById('place-tag-status').addEventListener('click', async (event) => {
+    if (event.target.id !== 'retry-place-tags') return;
+    try {
+      await fetchJSON('/api/place-tags/retry', { method: 'POST' });
+      document.getElementById('place-tag-status').textContent = 'Prøver å hente stedsnavn …';
+    } catch (_) {
+      document.getElementById('place-tag-status').textContent = 'Kunne ikke starte nytt forsøk.';
+    }
+  });
   initSettingsModal();
 
   try {
@@ -165,6 +181,14 @@ async function init() {
 
   await refresh();
   pollIngest();
+  pollPlaceTags();
+}
+
+function setSidebarCollapsed(collapsed) {
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  document.getElementById('sidebar-expand').hidden = !collapsed;
+  try { localStorage.setItem(SIDEBAR_KEY, String(collapsed)); } catch (_) {}
+  setTimeout(() => { map.invalidateSize(); resizeTerrainMap(); }, 0);
 }
 
 /* ------------------------------------------------------------------
@@ -479,6 +503,7 @@ function terrainRouteData() {
   };
   if (!terrainActivity) {
     for (const route of routes) {
+      if (!routeMatchesFilter(route)) continue;
       const points = (route.points || []).filter(([lat, lon]) => Number.isFinite(lat) && Number.isFinite(lon));
       line(points, TYPE_COLORS[route.type] || TYPE_COLORS.other, route.id);
     }
@@ -533,6 +558,25 @@ function currentFilter() {
   return document.getElementById('type-filter').value;
 }
 
+function searchText() {
+  return document.getElementById('activity-search').value.trim().toLocaleLowerCase('no');
+}
+
+function routeMatchesFilter(route) {
+  const a = activities.find((item) => item.id === route.id);
+  return a ? matchesFilter(a) : true;
+}
+
+function onSearchChange() {
+  renderList();
+  if (selectedId && !activities.some((a) => a.id === selectedId && matchesFilter(a))) {
+    clearSelection();
+  } else if (!selectedId) {
+    drawOverview();
+    renderDetail(null);
+  }
+}
+
 async function onFilterChange() {
   renderList();
   await loadRoutes();
@@ -550,7 +594,9 @@ async function onFilterChange() {
 
 function matchesFilter(a) {
   const f = currentFilter();
-  return !f || a.type === f;
+  const q = searchText();
+  return (!f || a.type === f) && (!q ||
+    [a.name, ...(a.placeTags || [])].some((s) => String(s || '').toLocaleLowerCase('no').includes(q)));
 }
 
 async function loadRoutes() {
@@ -579,6 +625,7 @@ function drawOverview() {
 
   const all = [];
   for (const r of routes) {
+    if (!routeMatchesFilter(r)) continue;
     if (!r.points || r.points.length < 2) continue;
     // A dark, non-interactive casing separates the route from busy topo tiles.
     L.polyline(r.points, {
@@ -642,9 +689,10 @@ function populateTypeFilter() {
 }
 
 function renderList() {
-  const filter = document.getElementById('type-filter').value;
   const ul = document.getElementById('activity-list');
-  const items = activities.filter((a) => !filter || a.type === filter);
+  const items = activities.filter(matchesFilter);
+  document.getElementById('search-count').textContent = searchText()
+    ? `${items.length} av ${activities.length} turer` : '';
   ul.innerHTML = items.map((a) => `
     <li data-id="${a.id}" class="${a.id === selectedId ? 'active' : ''}">
       <div class="li-title">
@@ -657,13 +705,14 @@ function renderList() {
         <span>${fmtDuration(a.movingTimeSec)}</span>
         ${a.avgHr ? `<span>${a.avgHr} bpm</span>` : ''}
       </div>
+      ${(a.placeTags || []).length ? `<div class="place-tags">${a.placeTags.slice(0, 5).map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}${a.placeTags.length > 5 ? `<span>+${a.placeTags.length - 5}</span>` : ''}</div>` : ''}
       <div class="li-actions">
         <button class="li-icon" data-act="rename" title="Gi nytt navn" aria-label="Gi nytt navn">${ICON_EDIT}</button>
         <button class="li-icon" data-act="zoom" title="Sentrer kartet på turen" aria-label="Sentrer kartet på turen">${ICON_ZOOM}</button>
         <button class="li-icon danger" data-act="del" title="Slett økta" aria-label="Slett økta">${ICON_TRASH}</button>
       </div>
-    </li>`).join('');
-  ul.querySelectorAll('li').forEach((li) => {
+    </li>`).join('') || '<li class="list-empty">Ingen turer samsvarer med søket.</li>';
+  ul.querySelectorAll('li[data-id]').forEach((li) => {
     const id = li.dataset.id;
     li.addEventListener('click', () => {
       if (id === selectedId) clearSelection();
@@ -882,6 +931,7 @@ function renderDetail(a) {
       <button id="rename-act" class="li-icon" title="Gi nytt navn" aria-label="Gi nytt navn">${ICON_EDIT}</button>
     </h2>
     <div class="sub">${TYPE_LABELS[a.type] || a.type} · ${fmtDateTime(a.start)} · kilde: ${escapeHtml(a.source)}${a.sourceName ? ' / ' + escapeHtml(a.sourceName) : ''}${a.customName ? ' · egendefinert navn' : ''}</div>
+    ${(a.placeTags || []).length ? `<div class="detail-place-tags"><div class="section-title">Steder langs ruten</div><div class="place-tags">${a.placeTags.map((tag) => `<span>${escapeHtml(tag)}</span>`).join('')}</div></div>` : ''}
     <div class="metric-grid">
       ${GarminView.metricsHtml(a.metrics)}
       ${metrics.map(([k, v, u]) => `<div class="metric"><div class="k">${k}</div><div class="v">${v} <small>${u}</small></div></div>`).join('')}
@@ -1091,6 +1141,32 @@ async function pollIngest() {
     }
   } catch (_) {}
   setTimeout(pollIngest, 15000);
+}
+
+let lastTagCount = 0;
+async function pollPlaceTags() {
+  try {
+    const status = await fetchJSON('/api/place-tags/status');
+    const el = document.getElementById('place-tag-status');
+    el.hidden = !status.running && !status.error;
+    el.innerHTML = status.error && !status.running
+      ? 'Stedsnavn kunne ikke hentes. <button id="retry-place-tags" type="button" class="ghost">Prøv igjen</button>'
+      : status.running ? 'Henter stedsnavn fra GPS-rutene …' : '';
+    if (status.completed !== lastTagCount) {
+      lastTagCount = status.completed;
+      const latest = await fetchJSON('/api/activities');
+      const oldTags = activities.find((a) => a.id === selectedId)?.placeTags || [];
+      activities = latest;
+      renderList();
+      if (!selectedId && searchText()) drawOverview();
+      const newTags = activities.find((a) => a.id === selectedId)?.placeTags || [];
+      if (selectedId && JSON.stringify(oldTags) !== JSON.stringify(newTags)) {
+        const a = await fetchJSON(`/api/activities/${selectedId}`);
+        if (selectedId === a.id) renderDetail(a);
+      }
+    }
+  } catch (_) {}
+  setTimeout(pollPlaceTags, 10000);
 }
 
 /** `busy` markerer pågående synk – da vises status også på små skjermer. */

@@ -43,6 +43,9 @@ export function createSqlite() {
 
     async init() {
       db.exec(`CREATE TABLE IF NOT EXISTS activities (\n${colDefs}\n);`);
+      if (!db.prepare('PRAGMA table_info(activities)').all().some((c) => c.name === 'place_tags')) {
+        db.exec('ALTER TABLE activities ADD COLUMN place_tags TEXT');
+      }
       db.exec(`CREATE TABLE IF NOT EXISTS garmin_health (
         source TEXT NOT NULL, date TEXT NOT NULL, data TEXT NOT NULL,
         PRIMARY KEY (source, date)

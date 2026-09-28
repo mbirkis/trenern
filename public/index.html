@@ -163,15 +163,22 @@
 
   <main>
     <aside id="sidebar">
+      <div class="sidebar-head">
+        <strong>Turer</strong>
+        <button id="sidebar-collapse" class="ghost" type="button" aria-label="Skjul turlisten" title="Skjul turlisten">‹</button>
+      </div>
       <div class="filters">
+        <input id="activity-search" type="search" placeholder="Søk navn eller sted" aria-label="Søk turer etter navn eller sted" />
         <select id="type-filter">
           <option value="">Alle typer</option>
         </select>
       </div>
+      <p id="search-count" class="search-count" role="status"></p>
+      <div id="place-tag-status" class="place-tag-status" role="status" hidden></div>
       <ul id="activity-list"></ul>
     </aside>
 
-    <section id="map"></section>
+    <section id="map"><button id="sidebar-expand" class="ghost" type="button" aria-label="Vis turlisten" title="Vis turlisten" hidden>☰ <span>Turer</span></button></section>
 
     <aside id="detail">
       <div class="detail-empty">Velg en økt fra listen</div>
