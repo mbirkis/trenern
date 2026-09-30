@@ -2,7 +2,7 @@
 # Multi-stage: build native deps (better-sqlite3) on a full image, run on slim.
 
 # ---- build stage ----
-FROM docker.io/library/node:22-bookworm AS build
+FROM docker.io/library/node:24-bookworm AS build
 WORKDIR /app
 
 # Toolchain for compiling better-sqlite3 when no prebuilt binary matches.
@@ -19,7 +19,7 @@ COPY scripts ./scripts
 COPY config/config.example.json ./config/config.example.json
 
 # ---- runtime stage ----
-FROM docker.io/library/node:22-bookworm-slim AS runtime
+FROM docker.io/library/node:24-bookworm-slim AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3005 \

@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0a0a" />
+  <script src="/theme.js"></script>
   <title>trenern</title>
   <link rel="preload" href="/vendor/geist/geist-latin.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="stylesheet" href="/vendor/geist/geist.css" />
@@ -46,6 +47,12 @@
       </div>
 
       <div class="modal-body">
+        <section class="settings-section" aria-labelledby="theme-heading">
+          <h3 id="theme-heading">Utseende</h3>
+          <p class="hint" id="theme-help">Velg tema. Valget gjelder hele appen og huskes i denne nettleseren.</p>
+          <div class="theme-grid" data-theme-picker role="group" aria-labelledby="theme-heading" aria-describedby="theme-help"></div>
+          <p class="hint" data-theme-status role="status" aria-live="polite"></p>
+        </section>
         <section class="settings-section">
           <h3>Kart</h3>
           <label>Kartvisning
