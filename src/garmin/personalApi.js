@@ -131,7 +131,7 @@ export function createPersonalApi({ keyDir, apiKey = null, baseUrl, fetchImpl, n
     if (!res.ok) {
       throw new GarminApiError(
         res.status === 401
-          ? 'Garmin avviste den personlige API-nøkkelen (401). Lag en ny nøkkel og kjør auth-garmin.mjs på nytt.'
+          ? 'Garmin avviste den personlige API-nøkkelen (401). Lag en ny nøkkel på Garmin Connect og legg den inn på nytt.'
           : `Kunne ikke hente Garmin-token (HTTP ${res.status})`,
         { status: res.status, path: TOKEN_PATH }
       );

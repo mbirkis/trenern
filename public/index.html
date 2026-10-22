@@ -140,10 +140,15 @@
               </label>
             </div>
             <div data-when="garminConnect">
+              <label>Personlig API-nøkkel
+                <input name="garminApiKey" type="password" autocomplete="off" spellcheck="false"
+                  placeholder="Lim inn nøkkelen fra Garmin Connect" />
+              </label>
+              <p class="hint">Lag nøkkelen på <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener">Garmin Connect</a> — den vises bare én gang. Nøkkelen verifiseres mot Garmin før den lagres, og lagres kun på serveren (<code>config/keys/garmin-KILDE-ID/</code>). Den vises aldri igjen her; la feltet stå tomt ved redigering for å beholde nøkkelen du allerede har.</p>
               <label>Helsedata fra (valgfritt)<input name="healthStartDate" type="date" /></label>
               <label>Eldre helsedager per synk<input name="healthBatchDays" type="number" min="1" max="90" value="30" /></label>
               <p class="hint">Uten startdato hentes historikk tilbake til eldste økt. De tre siste dagene oppdateres ved hver synk. Eldre dager hentes i etapper.</p>
-              <p class="hint">Lag en personlig API-nøkkel på <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener">Garmin Connect</a> (den vises bare én gang). Opprett kilden her, og lim inn nøkkelen fra en interaktiv terminal i containeren med <code>node scripts/auth-garmin.mjs --source-id KILDE-ID</code>. Nøkkelen skal ikke legges inn i nettleseren.</p>
+              <p class="hint">Alternativt kan nøkkelen settes fra en interaktiv terminal på serveren: <code>node scripts/auth-garmin.mjs --source-id KILDE-ID</code>. Opprett kilden først.</p>
             </div>
 
             <label class="row">

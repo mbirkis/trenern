@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import config, { saveConfig, resolvePath } from '../config.js';
 import { registeredSourceTypes, buildSources } from './index.js';
-import { apiKeyFile } from '../garmin/personalApi.js';
+import { apiKeyFile, createPersonalApi, writeApiKey, tokenCacheFile } from '../garmin/personalApi.js';
 
 /**
  * CRUD for `config.sources`, driven by the web UI. Secrets (API keys, service
@@ -160,6 +160,9 @@ function validate(input, { existingId } = {}) {
         new Date(cfg.healthStartDate).toISOString().slice(0, 10) !== cfg.healthStartDate)) {
       errors.push('Startdato for helsedata er ugyldig');
     }
+    // Optional here: the key may also be installed with scripts/auth-garmin.mjs.
+    const garminApiKey = String(input.garminApiKey || '').trim();
+    if (garminApiKey) cfg._pendingApiKey = garminApiKey;
     cfg.healthBatchDays = Number(input.healthBatchDays ?? 30);
     if (!Number.isInteger(cfg.healthBatchDays) || cfg.healthBatchDays < 1 || cfg.healthBatchDays > 90) {
       errors.push('Helsedager per synk må være mellom 1 og 90');
@@ -174,18 +177,45 @@ function commitKey(cfg) {
     fs.writeFileSync(keyFileFor(cfg.id), JSON.stringify(cfg._pendingKey, null, 2));
     delete cfg._pendingKey;
   }
+  if (cfg._pendingApiKey) {
+    const keyDir = resolvePath(cfg.tokenFile) || tokenFileFor(cfg.id);
+    writeApiKey(keyDir, cfg._pendingApiKey);
+    // A bearer token cached for the previous key is useless now.
+    fs.rmSync(tokenCacheFile(keyDir), { force: true });
+    delete cfg._pendingApiKey;
+  }
 }
 
-export function addSource(input) {
+/**
+ * Check a personal API key against Garmin before storing it, so a mistyped or
+ * expired key is reported in the form instead of at the next sync.
+ * @returns {Promise<string|null>} error message, or null when the key works
+ */
+async function verifyApiKey(key) {
+  try {
+    const api = createPersonalApi({ apiKey: key, keyDir: null });
+    await api.token({ force: true });
+    await api.get('/userprofile-service/userprofile/settings');
+    return null;
+  } catch (err) {
+    return `Garmin godtok ikke API-nøkkelen: ${err.message}`;
+  }
+}
+
+export async function addSource(input) {
   const { errors, cfg } = validate(input);
   if (errors.length) return { errors };
+  if (cfg._pendingApiKey) {
+    const problem = await verifyApiKey(cfg._pendingApiKey);
+    if (problem) return { errors: [problem] };
+  }
   commitKey(cfg);
   ensureSources().push(cfg);
   saveConfig();
   return { source: redactSource(cfg) };
 }
 
-export function updateSource(id, input) {
+export async function updateSource(id, input) {
   const list = ensureSources();
   const idx = list.findIndex((s) => s.id === id);
   if (idx === -1) return { errors: ['kilde ikke funnet'] };
@@ -211,6 +241,10 @@ export function updateSource(id, input) {
     if (prev.auth?.serviceAccountKeyFile && cfg.auth.method === 'serviceAccount') {
       cfg.auth.serviceAccountKeyFile = prev.auth.serviceAccountKeyFile;
     }
+  }
+  if (cfg._pendingApiKey) {
+    const problem = await verifyApiKey(cfg._pendingApiKey);
+    if (problem) return { errors: [problem] };
   }
   commitKey(cfg);
   list[idx] = cfg;

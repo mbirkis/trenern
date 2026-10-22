@@ -1553,6 +1553,7 @@ function readSourceForm() {
     authMethod: form.authMethod.value,
     serviceAccountKey: g('serviceAccountKey'),
     apiKey: g('apiKey'),
+    garminApiKey: g('garminApiKey'),
     path: g('path'),
     healthStartDate: g('healthStartDate'),
     healthBatchDays: Number(g('healthBatchDays')) || 30,

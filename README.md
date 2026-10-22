@@ -165,9 +165,14 @@ tredjepartsbibliotek; alt går gjennom Node.
    <https://connect.garmin.com/app/settings/personalApiToken>.
 2. Velg **Create Key**, godta vilkårene og velg utløpstid. Nøkkelen vises bare
    én gang – kopier den med én gang.
-3. Opprett kilden under Innstillinger → Datakilder.
-4. Installer nøkkelen fra en interaktiv terminal på maskinen som kjører Trenern
-   (i container: `podman exec -it systemd-trenern node scripts/auth-garmin.mjs --source-id garmin-mitt`):
+3. Lim nøkkelen inn i feltet **Personlig API-nøkkel** under Innstillinger →
+   Datakilder når du oppretter kilden. Nøkkelen verifiseres mot Garmin før den
+   lagres, sendes aldri tilbake til nettleseren, og feltet står tomt ved
+   redigering (tomt felt beholder nøkkelen du allerede har).
+
+Alternativt kan nøkkelen settes fra en interaktiv terminal på maskinen som
+kjører Trenern (i container: `podman exec -it systemd-trenern node
+scripts/auth-garmin.mjs --source-id garmin-mitt`):
 
 ```bash
 node scripts/auth-garmin.mjs --source-id garmin-mitt
@@ -175,14 +180,16 @@ node scripts/auth-garmin.mjs --source-id garmin-mitt
 # -> nøkkelen verifiseres mot Garmin og lagres, klar til ingest
 ```
 
-Nøkkelen lagres i `config/keys/garmin-<id>/api-key` (katalog 0700, fil 0600),
-aldri via web-UI-et. Nøkkelen byttes automatisk i et kortlevd bearer-token som
+Nøkkelen lagres i `config/keys/garmin-<id>/api-key` (katalog 0700, fil 0600) og
+forlater aldri serveren. Nøkkelen byttes automatisk i et kortlevd bearer-token som
 mellomlagres i samme katalog (`bearer-token.json`) og fornyes en time før utløp.
 Når nøkkelen utløper eller trekkes tilbake, svarer Garmin 401 og synken stopper
-med en tydelig feilmelding – lag en ny nøkkel og kjør skriptet på nytt.
+med en tydelig feilmelding – lag en ny nøkkel og legg den inn på nytt.
 
-**Viktig:** Ikke send API-nøkkelen som kommandolinjeargument (lekker via `ps`).
-Skriptet spør på stdin uten å vise det du skriver.
+**Viktig:** Ikke send API-nøkkelen som kommandolinjeargument (lekker via `ps`);
+skriptet spør på stdin uten å vise det du skriver. Merk også at Trenern selv ikke
+har innlogging: eksponerer du porten utenfor `127.0.0.1`, kan hvem som helst som
+når den legge inn eller bytte nøkkelen i UI-et.
 
 **Utvidet Garmin-import:** Aktiviteter inkluderer sammendrag, GPS-spor og
 måleserier for puls, kadens, fart, effekt, temperatur og løpsdynamikk – også

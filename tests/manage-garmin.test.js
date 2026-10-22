@@ -37,7 +37,7 @@ describe('GarminConnectConfig', () => {
 
   it('redactSource shows connected status without secrets', async () => {
     const manage = await import('../src/sources/manage.js');
-    const result = manage.addSource({
+    const result = await manage.addSource({
       type: 'garminConnect',
       label: 'Min Garmin Konto',
       enabled: true,
@@ -68,7 +68,7 @@ describe('GarminConnectConfig', () => {
 
   it('addSource creates a valid source config', async () => {
     const manage = await import('../src/sources/manage.js');
-    const result = manage.addSource({
+    const result = await manage.addSource({
       type: 'garminConnect',
       label: 'Garmin Test',
       enabled: true,
@@ -83,6 +83,49 @@ describe('GarminConnectConfig', () => {
     const configs = manage.listSourceConfigs();
     const garmin = configs.filter(s => s.type === 'garminConnect');
     assert.ok(garmin.length > 0, 'should list garminConnect sources');
+  });
+
+  it('accepts a personal API key from the web UI once Garmin confirms it', async () => {
+    const manage = await import('../src/sources/manage.js');
+    const { apiKeyFile } = await import('../src/garmin/personalApi.js');
+    const jwt = ['e30', Buffer.from(JSON.stringify({ exp: Date.now() / 1000 + 86400 })).toString('base64url'), 'sig'].join('.');
+    const seen = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url, init = {}) => {
+      seen.push([String(url), init.headers?.Authorization]);
+      return { ok: true, status: 200, headers: new Headers(), text: async () => (String(url).includes('/token') ? jwt : '{"displayName":"testbruker"}') };
+    };
+    try {
+      const result = await manage.addSource({
+        type: 'garminConnect', label: 'Garmin UI', enabled: true, garminApiKey: ' pasted-key ',
+      });
+      assert.ok(result.source, result.errors?.join(', '));
+      assert.equal(result.source.hasToken, true);
+      assert.ok(!JSON.stringify(result.source).includes('pasted-key'), 'the key must never be echoed back');
+      // Verified against Garmin before it was written to disk.
+      assert.ok(seen.some(([u, auth]) => u.includes('/token') && auth === 'ApiKey pasted-key'));
+      const stored = fs.readFileSync(apiKeyFile(path.join(process.cwd(), 'config', 'keys', `garmin-${result.source.id}`)), 'utf8');
+      assert.equal(stored.trim(), 'pasted-key');
+      manage.removeSource(result.source.id);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('refuses a key Garmin rejects and stores nothing', async () => {
+    const manage = await import('../src/sources/manage.js');
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async () => ({ ok: false, status: 401, headers: new Headers(), text: async () => '' });
+    try {
+      const result = await manage.addSource({
+        type: 'garminConnect', label: 'Garmin avvist', enabled: true, garminApiKey: 'bad-key',
+      });
+      assert.ok(result.errors?.[0]?.includes('Garmin godtok ikke'), result.errors?.join(', '));
+      assert.equal(manage.getSourceConfig('garmin-avvist'), null, 'no source created');
+      assert.ok(!fs.existsSync(path.join(process.cwd(), 'config', 'keys', 'garmin-garmin-avvist')));
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   it('removing a garminConnect source succeeds', async () => {

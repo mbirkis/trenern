@@ -78,14 +78,14 @@ app.get('/api/sources/:id', (req, res) => {
   res.json(s);
 });
 
-app.post('/api/sources', (req, res) => {
-  const { errors, source } = addSource(req.body || {});
+app.post('/api/sources', async (req, res) => {
+  const { errors, source } = await addSource(req.body || {});
   if (errors) return res.status(400).json({ errors });
   res.status(201).json(source);
 });
 
-app.put('/api/sources/:id', (req, res) => {
-  const { errors, source } = updateSource(req.params.id, req.body || {});
+app.put('/api/sources/:id', async (req, res) => {
+  const { errors, source } = await updateSource(req.params.id, req.body || {});
   if (errors)
     return res
       .status(errors[0] === 'kilde ikke funnet' ? 404 : 400)
