@@ -8,13 +8,14 @@ const source = () => createGarminConnectSource({ id: 'garmin', enabled: true, to
 test('source paginates until the final short page', async () => {
   const s = source();
   const starts = [];
-  s._execPython = async args => {
-    const start = Number(args[args.indexOf('--start') + 1]);
-    const limit = Number(args[args.indexOf('--limit') + 1]);
-    starts.push(start);
-    return JSON.stringify(Array.from({ length: start === 0 ? limit : 2 }, (_, i) => ({
-      activityId: start + i + 1, startTimeGMT: '2026-09-24 10:00:00', distance: 0,
-    })));
+  s._api = {
+    async get(path, params) {
+      if (!path.startsWith('/activitylist-service')) return null;
+      starts.push(params.start);
+      return Array.from({ length: params.start === 0 ? params.limit : 2 }, (_, i) => ({
+        activityId: params.start + i + 1, startTimeGMT: '2026-09-24 10:00:00', distance: 0,
+      }));
+    },
   };
   const files = await s.listFiles();
   assert.deepEqual(starts, [0, 100]);

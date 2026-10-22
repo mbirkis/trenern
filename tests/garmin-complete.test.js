@@ -48,12 +48,21 @@ test('health backfill progresses, recent days refresh and old data survives outa
   assert.deepEqual(mergeHealth({data:{hrv:{lastNightAvg:50}}},{data:{daily:{totalSteps:1}},endpointStatus:{hrv:'error'}}).data,{hrv:{lastNightAvg:50},daily:{totalSteps:1}});
 });
 
-test('Garmin cache changes when summary metadata changes and health uses CLI date', async () => {
+test('Garmin cache changes when summary metadata changes and health uses the requested date', async () => {
   const src=createGarminConnectSource({id:'test'});
-  let name='First'; src._execPython=async args=>JSON.stringify(args.includes('get-health') ? {date:args.at(-1),data:{daily:{totalSteps:42}}} : [{activityId:1,activityName:name,startTimeLocal:'2026-09-25 10:00:00',distance:0}]);
+  let name='First';
+  src._api={
+    async get(path,params){
+      if(path.startsWith('/activitylist-service')) return [{activityId:1,activityName:name,startTimeLocal:'2026-09-25 10:00:00',distance:0}];
+      if(path==='/usersummary-service/usersummary/daily') return {calendarDate:params.calendarDate,totalSteps:42};
+      return null;
+    },
+    async getBuffer(){ throw Object.assign(new Error('ingen fil'),{status:404}); },
+  };
   const first=(await src.listFiles())[0]; name='Renamed'; const second=(await src.listFiles())[0];
   assert.notEqual(first.modifiedTime,second.modifiedTime); assert.equal(first.startDate,'2026-09-25');
-  assert.equal((await src.readHealth('2026-09-25')).data.daily.totalSteps,42);
+  const day=await src.readHealth('2026-09-25');
+  assert.equal(day.data.daily.totalSteps,42); assert.equal(day.data.daily.calendarDate,'2026-09-25');
 });
 
 test('existing SQLite database upgrades without losing activities and persists health by source/date', async () => {

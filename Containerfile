@@ -26,17 +26,6 @@ ENV NODE_ENV=production \
     TRENERN_CONFIG=/app/config/config.json
 WORKDIR /app
 
-# Install Python 3 + pip for the Garmin Connect helper (garminconnect package).
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv \
- && rm -rf /var/lib/apt/lists/*
-
-# Set up the garmin_client venv inside the container with correct ownership.
-COPY scripts/garmin_client ./scripts/garmin_client
-RUN python3 -m venv scripts/garmin_client/.venv \
- && scripts/garmin_client/.venv/bin/pip install --no-cache-dir 'garminconnect>=0.3,<1.0' \
- && chown -R node:node scripts/garmin_client/.venv
-
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/src ./src
 COPY --from=build /app/public ./public
@@ -45,7 +34,7 @@ COPY --from=build /app/config ./config
 COPY package.json ./
 
 # Persisted at runtime: /app/data (database, cache) and /app/config (config.json,
-# service-account keys, garmin tokens). Declared as volumes so they are not baked into layers.
+# service-account keys, Garmin API key). Declared as volumes so they are not baked into layers.
 RUN mkdir -p /app/data /app/config/keys \
  && chown -R node:node /app/data /app/config
 VOLUME ["/app/data", "/app/config"]

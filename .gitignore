@@ -14,8 +14,5 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 data/*.sqlite
-scripts/garmin_client/.venv/
-__pycache__/
-*.pyc
 *.log
 .DS_Store

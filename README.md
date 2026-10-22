@@ -16,15 +16,8 @@ npm run sample                                       # lager 3 eksempel-økter i
 npm start                                            # http://127.0.0.1:3005
 ```
 
-**Python-avhengighet:** Garmin Connect-synk krever Python 3 + `garminconnect`.
-Opprett virtuelt miljø manuelt om du ikke bruker Docker:
-
-```bash
-python3 -m venv scripts/garmin_client/.venv
-scripts/garmin_client/.venv/bin/pip install 'garminconnect>=0.3,<1.0'
-```
-
-I containeren (podman/docker) gjøres dette automatisk av Containerfile.
+Garmin Connect-synk bruker Garmins personlige API og krever ingen ekstra
+avhengigheter – bare en personlig API-nøkkel (se [`garminConnect`](#garminconnect)).
 
 `npm start` kjører en ingest ved oppstart og deretter hvert `ingest.intervalMinutes`.
 Knappen **Synk nå** i toppen trigger en manuell henting.
@@ -156,44 +149,61 @@ Alternativt, for en offentlig delt mappe: `"auth": { "method": "apiKey", "apiKey
 
 ### `garminConnect`
 
-Henter aktivitetsdata direkte fra Garmin Connect API (aktiviteter, GPS-spor, puls,
-tempo, høyde). Bruker et Python-hjelpescript (`scripts/garmin_client/`) med
-`garminconnect`-biblioteket.
+Henter aktivitets- og helsedata fra **Garmins personlige API**
+(`https://personal.connectapi.garmin.com`) – aktiviteter, GPS-spor, puls, tempo
+og høyde. API-et er offisielt, skrivebeskyttet og krever ingen Python eller
+tredjepartsbibliotek; alt går gjennom Node.
 
 ```json
 { "id": "garmin-mitt", "type": "garminConnect", "enabled": true,
   "label": "Min Garmin-konto" }
 ```
 
-**Autentisering** skjer via interaktiv CLI (`scripts/auth-garmin.mjs`), aldri
-via web-UI-et. Tokens lagres i `config/keys/garmin-<id>/` (katalog 0700,
-filer 0600). Opprett først kilden under Innstillinger → Datakilder; kjør deretter
-på maskinen som kjører Trenern (i container: `podman exec -it systemd-trenern node scripts/auth-garmin.mjs --source-id garmin-mitt`):
+**Autentisering** skjer med en personlig API-nøkkel:
+
+1. Logg inn på Garmin Connect og åpne
+   <https://connect.garmin.com/app/settings/personalApiToken>.
+2. Velg **Create Key**, godta vilkårene og velg utløpstid. Nøkkelen vises bare
+   én gang – kopier den med én gang.
+3. Opprett kilden under Innstillinger → Datakilder.
+4. Installer nøkkelen fra en interaktiv terminal på maskinen som kjører Trenern
+   (i container: `podman exec -it systemd-trenern node scripts/auth-garmin.mjs --source-id garmin-mitt`):
 
 ```bash
 node scripts/auth-garmin.mjs --source-id garmin-mitt
-# -> skriver inn e-post / passord på stdin
-# -> ved 2FA: skriver inn kode fra autentikator-app
-# -> token lagres, klart til ingest
+# -> limer inn API-nøkkelen (skjult input, aldri som argument)
+# -> nøkkelen verifiseres mot Garmin og lagres, klar til ingest
 ```
 
-**Viktig:** Ikke send passord eller 2FA-koder som kommandolinjeargumenter
-(lekker via `ps`). Skriptet spør på stdin.
+Nøkkelen lagres i `config/keys/garmin-<id>/api-key` (katalog 0700, fil 0600),
+aldri via web-UI-et. Nøkkelen byttes automatisk i et kortlevd bearer-token som
+mellomlagres i samme katalog (`bearer-token.json`) og fornyes en time før utløp.
+Når nøkkelen utløper eller trekkes tilbake, svarer Garmin 401 og synken stopper
+med en tydelig feilmelding – lag en ny nøkkel og kjør skriptet på nytt.
+
+**Viktig:** Ikke send API-nøkkelen som kommandolinjeargument (lekker via `ps`).
+Skriptet spør på stdin uten å vise det du skriver.
 
 **Utvidet Garmin-import:** Aktiviteter inkluderer sammendrag, GPS-spor og
-måleserier for puls, kadens, fart, effekt og løpsdynamikk – også uten GPS.
-Garmins pulssoner, effektsoner, runder/intervaller, styrkesett, svømmedetaljer og
-vær hentes fra separate endepunkter. Ukjente Garmin-felt bevares og kan åpnes
-under «Alle Garmin-målinger». Garmin Connect kan levere nedskalerte måleserier
-(detaljforespørselen bruker `maxchart=2000`, `maxpoly=4000`); dette er ikke en
-import av hver enkelt original FIT-måling.
+måleserier for puls, kadens, fart, effekt, temperatur og løpsdynamikk – også
+uten GPS. Måleseriene dekodes fra den originale FIT-fila
+(`/download-service/files/activity/{id}`), siden det personlige API-et ikke har
+noe måleserie-endepunkt. Det gir full oppløsning: hver enkelt FIT-måling, ikke
+en nedskalert graf. Garmins tid i puls- og effektsoner, sonegrenser,
+rundesammendrag, styrkesett og tilhørende økter hentes fra listesvaret og
+separate endepunkter. Ukjente Garmin-felt bevares og kan åpnes under «Alle
+Garmin-målinger». Aktiviteter uten originalfil (manuelt registrerte) importeres
+med sammendrag og merkes `samples: unsupported` under «Datadekning».
 
 Statistikksiden viser også daglige skritt, kalorier, etasjer, intensitetsminutter,
 døgnpuls/hvilepuls, søvn og søvnscore, HRV, stress, Body Battery, SpO₂,
-respirasjon, VO₂-maks, treningsstatus/belastning, treningsberedskap,
-restitusjonstid og kondisjonsalder. Velg periode, kilde og dag; detaljer og
-måleserier er tilgjengelige i utfoldbare felt med paginering.
+respirasjon, hydrering, vekt og kondisjonsalder. Velg periode, kilde og dag;
+detaljer og måleserier er tilgjengelige i utfoldbare felt med paginering.
 Tilgjengelige målinger avhenger av klokke, sensorer og Garmin-konto.
+
+VO₂-maks, treningsstatus/belastning og treningsberedskap/restitusjonstid finnes
+ikke i det personlige API-et og vises som «Ikke tilgjengelig» under
+«Datadekning». VO₂-maks for en enkelt økt følger fortsatt med aktiviteten.
 
 **Historikk:** `healthStartDate` (YYYY-MM-DD) velger første helsedag. Uten dato
 brukes eldste aktivitetsdato. `healthBatchDays` (1–90, standard 30) begrenser
@@ -210,7 +220,7 @@ synk etter oppgraderingen importerer tidligere Garmin-økter på nytt for å fyl
 nye felt og rette tallene. Endringer som bare berører separate detaljendepunkter
 kan kreve tvunget import (`npm run ingest -- --force`). Hentefeil vises i
 «Datadekning», og eksisterende ekstra målinger bevares ved delvise feil.
-Uten innloggingstoken feiler kilden tydelig; den bruker aldri eksempeldata.
+Uten lagret API-nøkkel feiler kilden tydelig; den bruker aldri eksempeldata.
 
 **Beregninger:** Tempo bruker autoritativ Garmin-distanse og bevegelsestid.
 Garmins maks­fart og tid i pulssoner bevares. Appberegnede soner brukes bare når
@@ -219,9 +229,8 @@ Garmin-soner mangler, og merkes tydelig. Nedstigning kopieres aldri fra stigning
 pulssonetid og flere treningsmål. Puls/kadens/effekt/temperatur vektes etter
 bevegelsestid; manglende målinger inngår ikke som null i gjennomsnitt.
 
-**Tester:** `node --test tests/*.test.js` og
-`PYTHONPATH=scripts scripts/garmin_client/.venv/bin/python -m pytest scripts/garmin_client/tests`.
-Installer `pytest` i det virtuelle miljøet for Python-testene.
+**Tester:** `node --test tests/*.test.js` (dekker API-klient, token-håndtering,
+ZIP/FIT-dekoding, kildeadapteren og parserne).
 
 ## Filformater (parsere)
 

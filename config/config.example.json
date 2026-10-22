@@ -53,7 +53,7 @@
       "id": "garmin-mitt",
       "type": "garminConnect",
       "enabled": false,
-      "label": "Garmin Connect (sett opp via auth-garmin.mjs)"
+      "label": "Garmin Connect (personlig API — sett opp via auth-garmin.mjs)"
     }
   ]
 }

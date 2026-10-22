@@ -1,5 +1,6 @@
 /**
- * Parser for Garmin Connect activity JSON (output by garmin_client Python helper).
+ * Parser for Garmin Connect activity JSON (built by the garminConnect source
+ * from the Personal API summary plus the decoded FIT file).
  *
  * Detects data by the `_garmin: true` marker added by the source adapter.
  * Handles both GPS and non-GPS activities:

@@ -1,107 +1,175 @@
-/** Tests for Garmin Connect source adapter. */
-import { describe, it, before } from 'node:test';
+/** Tests for the Garmin Connect source adapter (Personal API). */
+import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createGarminConnectSource } from '../src/sources/garminConnect.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+const ACTIVITIES = [
+  {
+    activityId: 12345678,
+    activityName: 'Morning Run',
+    activityType: { typeKey: 'running' },
+    startTimeLocal: '2026-09-25 07:12:00',
+    startTimeGMT: '2026-09-25 05:12:00',
+    distance: 10234.5,
+    duration: 3120,
+    hasPolyline: true,
+    hrTimeInZone_1: 120,
+    hrTimeInZone_2: 900,
+    hrTimeInZone_3: 1800,
+  },
+  {
+    activityId: 12345680,
+    activityName: 'Strength Training',
+    activityType: { typeKey: 'strength_training' },
+    startTimeLocal: '2026-09-24 18:00:00',
+    distance: 0,
+    duration: 2400,
+    hasPolyline: false,
+    summarizedExerciseSets: [{ category: 'BENCH_PRESS', reps: 10 }],
+  },
+];
 
-// Resolve the venv python and fixtures path once
-const VENV_PYTHON = path.join(ROOT, 'scripts', 'garmin_client', '.venv', 'bin', 'python');
-const FIXTURES_DIR = path.join(ROOT, 'scripts', 'garmin_client', 'tests', 'fixtures');
-
-function loadFixture(name) {
-  return JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, name), 'utf8'));
+/** Minimal Personal API stub: routes by path prefix. */
+function stubApi(routes = {}) {
+  return {
+    calls: [],
+    async get(path, params) {
+      this.calls.push([path, params]);
+      for (const [prefix, value] of Object.entries(routes)) {
+        if (path.startsWith(prefix)) return typeof value === 'function' ? value(path, params) : value;
+      }
+      return null;
+    },
+    async getBuffer(path) {
+      this.calls.push([path]);
+      const err = new Error('ingen fil');
+      err.status = 404;
+      throw err;
+    },
+  };
 }
 
 describe('GarminConnectSource', () => {
-  it('runs the bundled Python module without mocking its executor', async () => {
-    const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
-    const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
-    const help = await src._execPython(['--help']);
-    assert.match(help, /garmin_client|Garmin Connect/i);
-  });
-
   describe('listFiles', () => {
-    it('returns a list of file-like entries with ref, name, modifiedTime, size', async () => {
-      const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
-      const src = createGarminConnectSource({
-        id: 'test-garmin',
-        enabled: true,
-        label: 'Test Garmin',
-      });
-      // Mock Python executor to return fixture data directly
-      const activities = loadFixture('test_activities.json');
-      src._execPython = async () => JSON.stringify(activities);
+    it('returns file-like entries with ref, name, modifiedTime and size', async () => {
+      const src = createGarminConnectSource({ id: 'test-garmin', enabled: true, label: 'Test Garmin' });
+      src._api = stubApi({ '/activitylist-service': ACTIVITIES });
 
       const files = await src.listFiles();
-      assert.ok(Array.isArray(files), 'listFiles must return an array');
-      assert.ok(files.length > 0, 'should return at least one activity');
+      assert.equal(files.length, 2);
       for (const f of files) {
-        assert.ok(typeof f.ref === 'string', `ref should be string, got ${typeof f.ref}`);
-        assert.ok(typeof f.name === 'string', `name should be string, got ${typeof f.name}`);
-        assert.ok(f.modifiedTime, 'modifiedTime should exist');
-        assert.ok(typeof f.size === 'number', `size should be number, got ${typeof f.size}`);
+        assert.equal(typeof f.ref, 'string');
+        assert.equal(typeof f.name, 'string');
+        assert.ok(f.modifiedTime);
+        assert.equal(typeof f.size, 'number');
       }
+      assert.equal(files[0].ref, '12345678');
+      assert.equal(files[0].startDate, '2026-09-25');
     });
 
     it('includes activities without GPS (strength, yoga)', async () => {
-      const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
-      const src = createGarminConnectSource({
-        id: 'test-garmin',
-        enabled: true,
-      });
-      const activities = loadFixture('test_activities.json');
-      src._execPython = async () => JSON.stringify(activities);
+      const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
+      src._api = stubApi({ '/activitylist-service': ACTIVITIES });
+      const names = (await src.listFiles()).map((f) => f.name);
+      assert.ok(names.some((n) => n.includes('Strength')));
+      assert.ok(names.some((n) => n.includes('Morning')));
+    });
 
-      const files = await src.listFiles();
-      const names = files.map(f => f.name);
-      assert.ok(names.some(n => n.includes('Strength')), 'Strength Training must be present');
-      assert.ok(names.some(n => n.includes('Morning')), 'Running must be present');
+    it('asks Garmin for the documented search endpoint with paging', async () => {
+      const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
+      src._api = stubApi({ '/activitylist-service': ACTIVITIES });
+      await src.listFiles();
+      assert.equal(src._api.calls[0][0], '/activitylist-service/activities/search/activities');
+      assert.deepEqual(src._api.calls[0][1], { start: 0, limit: 100 });
     });
   });
 
   describe('readJson', () => {
-    it('returns JSON with track for GPS activities', async () => {
-      const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
+    it('merges the activity summary with time in zones and the FIT track', async () => {
       const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
-      src._execPython = async (args) => {
-        if (args.includes('12345678')) {
-          return JSON.stringify(loadFixture('test_activity_detail.json'));
-        }
-        return '{}';
+      src._api = stubApi({
+        '/biometric-service': { zone1Floor: 100, zone2Floor: 120, zone3Floor: 140 },
+        '/activity-service/activity/12345678/workouts': [],
+        '/activity-service/activity/12345678': {
+          activityId: 12345678,
+          activityTypeDTO: { typeKey: 'running' },
+          summaryDTO: { startTimeGMT: '2026-09-25T05:12:00.0', distance: 10234.5, duration: 3120, averageHR: 155 },
+        },
+      });
+      src._api.getBuffer = async () => {
+        throw Object.assign(new Error('ingen fil'), { status: 404 });
       };
-      const data = await src.readJson({ ref: '12345678', _garminType: 'running', _hasPolyline: true });
-      assert.ok(data.track, 'should have track');
-      assert.ok(data.track.length > 0, 'track should have points');
-      assert.ok(data._garmin, 'should have _garmin marker');
+
+      const data = await src.readJson({ ref: '12345678', _garminType: 'running', _hasPolyline: true, _summary: ACTIVITIES[0] });
+      assert.ok(data._garmin, 'should carry the Garmin marker');
+      assert.equal(data.summaryDTO.averageHR, 155);
+      assert.equal(data.activityName, 'Morning Run', 'list fields survive the merge');
+      assert.deepEqual(data.garminExtras.hrTimeInZones[0], { zoneNumber: 1, secsInZone: 120, zoneLowBoundary: 100 });
+      assert.equal(data.garminExtras.configuredHrZones.zone2Floor, 120);
+      // A missing original file is normal for manual activities, not an error.
+      assert.equal(data.endpointStatus.samples, 'unsupported');
+      assert.deepEqual(data.track, []);
     });
 
-    it('returns JSON without track for non-GPS activities', async () => {
-      const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
+    it('returns an empty track for non-GPS activities', async () => {
       const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
-      src._execPython = async (args) => {
-        return JSON.stringify({
+      src._api = stubApi({
+        '/activity-service/activity/12345680': {
           activityId: 12345680,
-          activityName: 'Strength Training',
-          activityType: { typeKey: 'strength_training' },
-          track: [],
-        });
+          activityTypeDTO: { typeKey: 'strength_training' },
+          summaryDTO: { startTimeGMT: '2026-09-24T16:00:00.0', duration: 2400 },
+        },
+      });
+      const data = await src.readJson({ ref: '12345680', _garminType: 'strength_training', _hasPolyline: false, _summary: ACTIVITIES[1] });
+      assert.deepEqual(data.track, []);
+      assert.ok(data._garmin);
+      assert.deepEqual(data.garminExtras.exerciseSets, [{ category: 'BENCH_PRESS', reps: 10 }]);
+    });
+
+    it('stops the sync when Garmin rejects the token', async () => {
+      const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
+      src._api = {
+        async get() {
+          throw Object.assign(new Error('HTTP 401'), { status: 401 });
+        },
+        async getBuffer() {
+          throw Object.assign(new Error('HTTP 401'), { status: 401 });
+        },
       };
-      const data = await src.readJson({ ref: '12345680', _garminType: 'strength_training', _hasPolyline: false });
-      assert.ok(data.track, 'should have track key');
-      assert.equal(data.track.length, 0, 'track should be empty for non-GPS activity');
-      assert.ok(data._garmin, 'should have _garmin marker');
+      await assert.rejects(() => src.readJson({ ref: '1', _summary: {} }), /401/);
+    });
+  });
+
+  describe('readHealth', () => {
+    it('collects one day across the Personal API health endpoints', async () => {
+      const src = createGarminConnectSource({ id: 'test-garmin', enabled: true });
+      src._api = stubApi({
+        '/usersummary-service/usersummary/daily': { totalSteps: 8421, restingHeartRate: 48, avgWakingRespirationValue: 13.5 },
+        '/usersummary-service/stats/steps': [{ calendarDate: '2026-09-25', totalSteps: 8421 }],
+        '/sleep-service': { sleepTimeSeconds: 27000 },
+        '/hrv-service': { lastNightAvg: 62 },
+        '/wellness-service/wellness/bodyBattery': [{ charged: 70, drained: 40 }],
+      });
+
+      const day = await src.readHealth('2026-09-25');
+      assert.equal(day.date, '2026-09-25');
+      assert.equal(day.data.daily.totalSteps, 8421);
+      assert.equal(day.data.sleep.sleepTimeSeconds, 27000);
+      assert.equal(day.data.hrv.lastNightAvg, 62);
+      // Range endpoints are unwrapped to a single day for the UI.
+      assert.equal(day.data.bodyBattery.charged, 70);
+      assert.equal(day.data.steps.totalSteps, 8421);
+      // Respiration has no endpoint but rides along in the daily summary.
+      assert.equal(day.data.respiration.avgWakingRespirationValue, 13.5);
+      assert.equal(day.endpointStatus.daily, 'ok');
+      assert.equal(day.endpointStatus.spo2, 'empty');
+      assert.equal(day.endpointStatus.trainingReadiness, 'unsupported');
     });
   });
 
   describe('describe', () => {
     it('returns a human-readable description', async () => {
-      const { createGarminConnectSource } = await import('../src/sources/garminConnect.js');
       const src = createGarminConnectSource({ id: 'my-garmin', enabled: true, label: 'Min Garmin' });
-      assert.ok(typeof src.describe() === 'string');
       assert.ok(src.describe().includes('garminConnect'));
       assert.ok(src.describe().includes('my-garmin'));
     });

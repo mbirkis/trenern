@@ -53,14 +53,17 @@ describe('GarminConnectConfig', () => {
     assert.equal(result.source.hasToken, false, 'no token file for fresh source');
   });
 
-  it('recognizes single-file Garmin tokens without exposing them', async () => {
+  it('recognizes a stored personal API key without exposing it', async () => {
     const { redactSource } = await import('../src/sources/manage.js');
-    const tokenDir = path.join(tmpDir, 'garmin-tokens');
-    fs.mkdirSync(tokenDir);
-    fs.writeFileSync(path.join(tokenDir, 'garmin_tokens.json'), '{}');
-    const source = redactSource({ id: 'test', type: 'garminConnect', tokenFile: tokenDir, enabled: false });
-    assert.equal(source.hasToken, true);
-    assert.equal(source.tokenFile, undefined);
+    const keyDir = path.join(tmpDir, 'garmin-keys');
+    fs.mkdirSync(keyDir);
+    const source = redactSource({ id: 'test', type: 'garminConnect', tokenFile: keyDir, enabled: false });
+    assert.equal(source.hasToken, false, 'no key installed yet');
+    fs.writeFileSync(path.join(keyDir, 'api-key'), 'secret-key\n');
+    const connected = redactSource({ id: 'test', type: 'garminConnect', tokenFile: keyDir, enabled: false });
+    assert.equal(connected.hasToken, true);
+    assert.equal(connected.tokenFile, undefined);
+    assert.ok(!JSON.stringify(connected).includes('secret-key'), 'the key must never leave the server');
   });
 
   it('addSource creates a valid source config', async () => {

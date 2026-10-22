@@ -143,7 +143,7 @@
               <label>Helsedata fra (valgfritt)<input name="healthStartDate" type="date" /></label>
               <label>Eldre helsedager per synk<input name="healthBatchDays" type="number" min="1" max="90" value="30" /></label>
               <p class="hint">Uten startdato hentes historikk tilbake til eldste økt. De tre siste dagene oppdateres ved hver synk. Eldre dager hentes i etapper.</p>
-              <p class="hint">Opprett kilden her, og autentiser deretter fra en interaktiv terminal i containeren med <code>node scripts/auth-garmin.mjs --source-id KILDE-ID</code>. Passord og 2FA skal ikke legges inn i nettleseren.</p>
+              <p class="hint">Lag en personlig API-nøkkel på <a href="https://connect.garmin.com/app/settings/personalApiToken" target="_blank" rel="noopener">Garmin Connect</a> (den vises bare én gang). Opprett kilden her, og lim inn nøkkelen fra en interaktiv terminal i containeren med <code>node scripts/auth-garmin.mjs --source-id KILDE-ID</code>. Nøkkelen skal ikke legges inn i nettleseren.</p>
             </div>
 
             <label class="row">

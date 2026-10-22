@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import config, { saveConfig, resolvePath } from '../config.js';
 import { registeredSourceTypes, buildSources } from './index.js';
+import { apiKeyFile } from '../garmin/personalApi.js';
 
 /**
  * CRUD for `config.sources`, driven by the web UI. Secrets (API keys, service
@@ -57,13 +58,9 @@ export function redactSource(cfg) {
   if (cfg.type === 'garminConnect') {
     out.healthStartDate = cfg.healthStartDate || null;
     out.healthBatchDays = cfg.healthBatchDays || 30;
-    // Both current DI token file and legacy OAuth token pair are supported.
-    const tokenPath = cfg.tokenFile ? resolvePath(cfg.tokenFile) : tokenFileFor(cfg.id);
-    out.hasToken = !!(tokenPath && (
-      fs.existsSync(path.join(tokenPath, 'garmin_tokens.json')) ||
-      (fs.existsSync(path.join(tokenPath, 'oauth1_token.json')) &&
-        fs.existsSync(path.join(tokenPath, 'oauth2_token.json')))
-    ));
+    // Personal API: a stored API key is what "connected" means.
+    const keyDir = cfg.tokenFile ? resolvePath(cfg.tokenFile) : tokenFileFor(cfg.id);
+    out.hasToken = !!(keyDir && fs.existsSync(apiKeyFile(keyDir)));
   }
   return out;
 }
@@ -151,8 +148,9 @@ function validate(input, { existingId } = {}) {
     if (!p) errors.push('path er påkrevd for lokal mappe');
     cfg.path = p;
   } else if (type === 'garminConnect') {
-    // Token file path is derived from the source ID; no user input needed.
-    // Bootstrap auth via scripts/auth-garmin.mjs (interactive CLI), never web UI.
+    // Key directory is derived from the source ID; no user input needed.
+    // The personal API key is installed with scripts/auth-garmin.mjs
+    // (interactive CLI), never through the web UI.
     cfg.tokenFile = `./config/keys/garmin-${id}`;
     cfg.filePattern = null; // not applicable for Garmin — files are API activities
     cfg.recursive = false;  // not applicable
@@ -227,7 +225,7 @@ export function removeSource(id) {
   const [removed] = list.splice(idx, 1);
   saveConfig();
   if (removed.type === 'garminConnect') {
-    // Token lives in a dedicated directory derived from the source ID.
+    // API key and cached bearer token live in a directory named after the source.
     fs.rmSync(tokenFileFor(id), { recursive: true, force: true });
   } else {
     try { fs.unlinkSync(keyFileFor(id)); } catch {}
